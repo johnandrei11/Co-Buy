@@ -61,6 +61,8 @@ const Dataset = () => {
   };
 
   const handleSelectFile = async (ds) => {
+    localStorage.setItem('activeDatasetId', ds.id);
+    localStorage.setItem('activeDatasetName', ds.name);
     try {
       await axios.post(`${API_BASE}/history/${ds.id}/activate`);
       navigate(`/analytics?dataset_id=${ds.id}`);

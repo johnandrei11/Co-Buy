@@ -217,19 +217,26 @@ const Login = ({ onLogin }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Security & Lockout state
-  const [isLocked, setIsLocked] = useState(false);
+  // Security & Lockout state (scoped per email)
+  const [lockedEmail, setLockedEmail] = useState('');
   const [lockoutRemainingSeconds, setLockoutRemainingSeconds] = useState(0);
   const [attemptsRemaining, setAttemptsRemaining] = useState(null);
+
+  const isCurrentEmailLocked = Boolean(
+    !isRegister &&
+    lockedEmail &&
+    email.trim().toLowerCase() === lockedEmail.toLowerCase() &&
+    lockoutRemainingSeconds > 0
+  );
 
   // Real-time lockout countdown timer
   React.useEffect(() => {
     let timer;
-    if (isLocked && lockoutRemainingSeconds > 0) {
+    if (lockedEmail && lockoutRemainingSeconds > 0) {
       timer = setInterval(() => {
         setLockoutRemainingSeconds((prev) => {
           if (prev <= 1) {
-            setIsLocked(false);
+            setLockedEmail('');
             setError('');
             return 0;
           }
@@ -238,7 +245,7 @@ const Login = ({ onLogin }) => {
       }, 1000);
     }
     return () => clearInterval(timer);
-  }, [isLocked, lockoutRemainingSeconds]);
+  }, [lockedEmail, lockoutRemainingSeconds]);
 
   const formatLockoutTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -284,7 +291,8 @@ const Login = ({ onLogin }) => {
         }, 1200);
       } else {
         const response = await axios.post(`${API_BASE}/login`, { email, password });
-        setIsLocked(false);
+        setLockedEmail('');
+        setLockoutRemainingSeconds(0);
         setAttemptsRemaining(null);
         onLogin(response.data.token, response.data.user);
       }
@@ -292,9 +300,9 @@ const Login = ({ onLogin }) => {
       console.error('Auth error:', err);
       const errData = err.response?.data;
       if (errData?.is_locked) {
-        setIsLocked(true);
+        setLockedEmail(email.trim().toLowerCase());
         setLockoutRemainingSeconds(errData.remaining_seconds || 600);
-        setError(errData.error || 'Account temporarily locked.');
+        setError(errData.error || `Account ${email} is temporarily locked.`);
         setAttemptsRemaining(null);
       } else if (errData?.attempts_remaining !== undefined) {
         setAttemptsRemaining(errData.attempts_remaining);
@@ -459,7 +467,7 @@ const Login = ({ onLogin }) => {
 
         {/* Alerts */}
         <AnimatePresence mode="wait">
-          {isLocked ? (
+          {isCurrentEmailLocked ? (
             <motion.div
               key="lockout-alert"
               initial={{ opacity: 0, height: 0, y: -10 }}
@@ -479,7 +487,7 @@ const Login = ({ onLogin }) => {
                 <span>Account Temporarily Locked</span>
               </div>
               <div style={{ fontSize: '0.8rem', color: '#f87171', lineHeight: 1.4 }}>
-                {error || 'Too many failed login attempts.'}
+                Too many failed attempts for <strong>{lockedEmail}</strong>. This account is locked for 10 minutes. You can sign in with another account below.
               </div>
               <div style={{
                 marginTop: '0.25rem',
@@ -600,9 +608,12 @@ const Login = ({ onLogin }) => {
                 type="email"
                 placeholder="you@example.com"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (error && !lockedEmail) setError('');
+                }}
                 required
-                disabled={isLocked}
+                disabled={isLoading}
                 autoComplete="off"
                 className="input"
               />
@@ -617,7 +628,7 @@ const Login = ({ onLogin }) => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  disabled={isLocked}
+                  disabled={isLoading}
                   autoComplete="new-password"
                   className="input"
                   style={{ paddingRight: '44px' }}
@@ -740,16 +751,16 @@ const Login = ({ onLogin }) => {
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={isLoading || isLocked}
+            disabled={isLoading || isCurrentEmailLocked}
             className="btn btn-primary"
-            style={{ width: '100%', marginTop: '0.75rem', height: '46px', opacity: isLocked ? 0.7 : 1 }}
+            style={{ width: '100%', marginTop: '0.75rem', height: '46px', opacity: isCurrentEmailLocked ? 0.7 : 1 }}
           >
             {isLoading ? (
               <div className="spin" style={{
                 width: '18px', height: '18px', borderRadius: '50%',
                 border: '2px solid var(--bg-color)', borderTopColor: 'transparent'
               }} />
-            ) : isLocked ? (
+            ) : isCurrentEmailLocked ? (
               'Account Locked'
             ) : (
               isRegister ? 'Create Account' : 'Sign In'

@@ -4,22 +4,22 @@ const Logo = ({ size = 'md', showSubtitle = false, className = '' }) => {
   const sizes = {
     sm: {
       fontSize: '1.18rem',
-      iconSize: '24px',
+      iconSize: 22,
       badgeFontSize: '0.72rem'
     },
     md: {
       fontSize: '1.45rem',
-      iconSize: '32px',
+      iconSize: 26,
       badgeFontSize: '0.92rem'
     },
     lg: {
       fontSize: '1.8rem',
-      iconSize: '40px',
+      iconSize: 32,
       badgeFontSize: '1.15rem'
     },
     xl: {
       fontSize: '2.2rem',
-      iconSize: '48px',
+      iconSize: 40,
       badgeFontSize: '1.4rem'
     }
   };
@@ -32,8 +32,7 @@ const Logo = ({ size = 'md', showSubtitle = false, className = '' }) => {
       style={{
         display: 'inline-flex',
         flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
+        alignItems: 'flex-start',
         userSelect: 'none',
         width: '100%'
       }}
@@ -42,12 +41,37 @@ const Logo = ({ size = 'md', showSubtitle = false, className = '' }) => {
         style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          gap: size === 'sm' ? '0.55rem' : '0.68rem',
+          gap: '0.65rem',
           cursor: 'pointer'
         }}
       >
-        {/* CoBuy Brand Wordmark */}
+        {/* CoBuy Layered Rhombuses Brand Icon */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}
+        >
+          <svg
+            width={config.iconSize}
+            height={config.iconSize}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ color: '#6366f1' }}
+          >
+            <polygon points="12 2 2 7 12 12 22 7 12 2" fill="rgba(99, 102, 241, 0.18)" stroke="#6366f1" />
+            <polyline points="2 12 12 17 22 12" stroke="#6366f1" />
+            <polyline points="2 17 12 22 22 17" stroke="#6366f1" />
+          </svg>
+        </div>
+
+        {/* CoBuy Wordmark */}
         <span
           style={{
             fontWeight: '800',

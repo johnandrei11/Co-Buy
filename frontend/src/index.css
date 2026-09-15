@@ -81,12 +81,12 @@
                  radial-gradient(circle at 85% 85%, rgba(124, 58, 237, 0.06) 0%, transparent 45%);
 }
 
-/* Auto-adapt inline white/#fff text color when in light mode (excluding buttons and their contents) */
-[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *)[style*="color: #fff"],
-[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *)[style*="color: white"],
-[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *)[style*="color: rgb(255, 255, 255)"],
-[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *)[style*="color: '#fff'"],
-[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *)[style*="color: 'white'"] {
+/* Auto-adapt inline white/#fff text color when in light mode (excluding buttons and their contents, and dark banner components) */
+[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *):not(.cobuy-dark-banner):not(.cobuy-dark-banner *)[style*="color: #fff"],
+[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *):not(.cobuy-dark-banner):not(.cobuy-dark-banner *)[style*="color: white"],
+[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *):not(.cobuy-dark-banner):not(.cobuy-dark-banner *)[style*="color: rgb(255, 255, 255)"],
+[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *):not(.cobuy-dark-banner):not(.cobuy-dark-banner *)[style*="color: '#fff'"],
+[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *):not(.cobuy-dark-banner):not(.cobuy-dark-banner *)[style*="color: 'white'"] {
   color: var(--text-main) !important;
 }
 
@@ -99,12 +99,12 @@ button[style*="background: linear-gradient"] * {
   stroke: #ffffff !important;
 }
 
-[data-theme="light"] [style*="color: rgba(255,255,255"],
-[data-theme="light"] [style*="color: rgba(255, 255, 255"] {
+[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *)[style*="color: rgba(255,255,255"],
+[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *)[style*="color: rgba(255, 255, 255"] {
   color: var(--text-muted) !important;
 }
 
-/* Auto-adapt inline dark/white box backgrounds when in light mode */
+/* Auto-adapt inline dark/white box backgrounds when in light mode (excluding dark banner) */
 [data-theme="light"] [style*="background: '#13151f'"],
 [data-theme="light"] [style*="background: #13151f"],
 [data-theme="light"] [style*="background: rgba(0, 0, 0, 0.1)"],
@@ -121,8 +121,8 @@ button[style*="background: linear-gradient"] * {
   border-color: var(--border-color) !important;
 }
 
-[data-theme="light"] [style*="background: rgba(255,255,255,0.05)"],
-[data-theme="light"] [style*="background: rgba(255, 255, 255, 0.05)"] {
+[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *)[style*="background: rgba(255,255,255,0.05)"],
+[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *)[style*="background: rgba(255, 255, 255, 0.05)"] {
   background: var(--badge-bg) !important;
   color: var(--text-main) !important;
 }
@@ -451,22 +451,24 @@ input:-webkit-autofill:active {
 table {
   width: 100%;
   border-collapse: collapse;
-  font-family: var(--font-mono);
-  font-size: 0.9rem;
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.875rem;
 }
 
 th {
-  padding: 1.25rem 1rem;
+  padding: 0.75rem 0.75rem;
   font-size: 0.75rem;
   text-align: left;
   color: var(--text-muted);
   border-bottom: 2px solid var(--border-color);
+  font-family: var(--font-body), sans-serif;
 }
 
 td {
-  padding: 1.25rem 1rem;
+  padding: 0.75rem 0.75rem;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-main);
+  font-family: var(--font-body), sans-serif;
 }
 
 tr:hover td {
@@ -669,3 +671,1022 @@ input[type=number] {
     color: #000000 !important;
   }
 }
+
+/* ── Global Top Navbar (Matches Reference Screens A & B) ─────────────────── */
+.cobuy-top-navbar {
+  position: fixed;
+  top: 0;
+  left: 280px;
+  right: 0;
+  height: 4.5rem;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border-color);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2.5rem;
+  gap: 1.5rem;
+}
+
+@media (max-width: 960px) {
+  .cobuy-top-navbar {
+    left: 0;
+    padding: 0 1.25rem;
+  }
+}
+
+.cobuy-top-search-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+}
+
+.cobuy-top-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-dim);
+  pointer-events: none;
+}
+
+.cobuy-top-search-input {
+  width: 100%;
+  background: var(--inner-box-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 0.55rem 1rem 0.55rem 2.3rem;
+  font-size: 0.85rem;
+  color: var(--text-main);
+  outline: none;
+  transition: var(--transition);
+}
+
+.cobuy-top-search-input:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+}
+
+/* ── Search Highlight Token ─────────────────────────────────────────────── */
+.cobuy-search-highlight {
+  background-color: rgba(99, 102, 241, 0.28);
+  color: #818cf8;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 0.05rem 0.2rem;
+}
+
+[data-theme="light"] .cobuy-search-highlight {
+  background-color: #e0e7ff;
+  color: #4338ca;
+}
+
+/* ── Top Navbar Search Component ────────────────────────────────────────── */
+.cobuy-top-search-clear {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: color 0.15s ease;
+}
+
+.cobuy-top-search-clear:hover {
+  color: var(--text-main);
+}
+
+.cobuy-top-search-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.45);
+  max-height: 380px;
+  overflow-y: auto;
+  z-index: 500;
+  padding: 0.5rem 0;
+}
+
+.cobuy-top-search-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 1rem 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.cobuy-top-search-hint {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  font-weight: 400;
+  text-transform: none;
+}
+
+.cobuy-top-search-empty {
+  padding: 1.5rem 1rem;
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.cobuy-top-search-list {
+  padding: 0.25rem 0;
+}
+
+.cobuy-top-search-item {
+  padding: 0.65rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  user-select: none;
+}
+
+.cobuy-top-search-item:hover,
+.cobuy-top-search-item.active {
+  background: var(--sidebar-active-bg);
+}
+
+.cobuy-top-search-item-main {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+.cobuy-top-search-item.active .cobuy-top-search-item-main {
+  color: var(--primary-color);
+}
+
+.cobuy-top-search-item-icon {
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.cobuy-top-search-item.active .cobuy-top-search-item-icon {
+  color: var(--primary-color);
+}
+
+.cobuy-top-search-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.cobuy-top-search-item-arrow {
+  opacity: 0;
+  color: var(--primary-color);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.cobuy-top-search-item:hover .cobuy-top-search-item-arrow,
+.cobuy-top-search-item.active .cobuy-top-search-item-arrow {
+  opacity: 1;
+  transform: translateX(2px);
+}
+
+.cobuy-top-right-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.cobuy-top-icon-btn {
+  background: var(--inner-box-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cobuy-top-icon-btn:hover {
+  border-color: var(--primary-color);
+  color: var(--text-main);
+}
+
+.cobuy-user-header-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.35rem 0.85rem 0.35rem 0.35rem;
+  border-radius: 30px;
+  background: var(--inner-box-bg);
+  border: 1px solid var(--border-color);
+  text-decoration: none;
+  color: var(--text-main);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.cobuy-user-header-pill:hover {
+  border-color: var(--primary-color);
+  background: rgba(79, 70, 229, 0.05);
+}
+
+.cobuy-user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.78rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cobuy-user-name {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-main);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Sidebar Guide Widget Card (Reference Screens A & B) ─────────────────── */
+.cobuy-sidebar-guide-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0.95rem;
+  margin-top: auto;
+  margin-bottom: 1.25rem;
+}
+
+[data-theme="light"] .cobuy-sidebar-guide-card {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.cobuy-sidebar-guide-icon {
+  color: #6366f1;
+  margin-bottom: 0.35rem;
+}
+
+.cobuy-sidebar-guide-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 0.25rem;
+}
+
+.cobuy-sidebar-guide-desc {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin-bottom: 0.45rem;
+}
+
+.cobuy-sidebar-guide-link {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #6366f1;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.15s ease;
+}
+
+.cobuy-sidebar-guide-link:hover {
+  color: #4f46e5;
+  text-decoration: underline;
+}
+
+/* =========================================================================
+   COBUY DASHBOARD REDESIGN STYLES (PIXEL-PERFECT TO REFERENCE MOCKUP)
+   ========================================================================= */
+
+.cobuy-dash-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.35rem;
+  width: 100%;
+}
+
+/* 1. Market Insights Page Header */
+.cobuy-dash-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.cobuy-dash-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.cobuy-dash-header-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cobuy-dash-title {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.cobuy-dash-subtitle {
+  font-size: 0.86rem;
+  color: #64748b;
+  margin: 0.2rem 0 0 0;
+}
+
+.cobuy-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1.05rem;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: all 0.2s ease;
+}
+
+.cobuy-export-btn:hover {
+  background: #f8fafc;
+  border-color: #6366f1;
+  color: #6366f1;
+}
+
+/* 2. Active Dataset Context Card */
+.cobuy-active-dataset-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 1rem 1.4rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.cobuy-active-dataset-info {
+  display: flex;
+  align-items: center;
+  gap: 0.95rem;
+}
+
+.cobuy-active-dataset-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #eef2ff;
+  color: #4f46e5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cobuy-dataset-sub-label {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  font-weight: 500;
+  margin-bottom: 0.15rem;
+}
+
+.cobuy-active-dataset-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.cobuy-active-dataset-name {
+  font-size: 1.08rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.cobuy-active-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.18rem 0.6rem;
+  border-radius: 100px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #059669;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.cobuy-active-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+.cobuy-active-dataset-meta {
+  font-size: 0.81rem;
+  color: #64748b;
+  margin-top: 0.2rem;
+}
+
+.cobuy-change-dataset-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.95rem;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cobuy-change-dataset-btn:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+  background: #f8fafc;
+}
+
+/* 3. Four Dynamic KPI Cards */
+.cobuy-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.15rem;
+}
+
+@media (max-width: 960px) {
+  .cobuy-kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 540px) {
+  .cobuy-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cobuy-kpi-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 1.3rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cobuy-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.04);
+}
+
+.cobuy-kpi-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.cobuy-kpi-icon-box {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cobuy-kpi-label {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: none; /* Clean sentence case */
+  letter-spacing: normal;
+}
+
+.cobuy-kpi-value {
+  font-size: 2.25rem;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.1;
+  margin: 0.85rem 0 0.45rem 0;
+  letter-spacing: -0.02em;
+}
+
+.cobuy-kpi-footer {
+  font-size: 0.78rem;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.cobuy-kpi-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #10b981;
+}
+
+.cobuy-kpi-compare {
+  font-size: 0.76rem;
+  color: #94a3b8;
+}
+
+/* 4. Middle Section (Transaction Activity & Key Insights) */
+.cobuy-dash-middle {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 1.25rem;
+}
+
+@media (max-width: 1024px) {
+  .cobuy-dash-middle {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cobuy-chart-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 1.3rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.cobuy-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+
+.cobuy-chart-title {
+  font-size: 1.12rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.cobuy-date-filter-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.cobuy-chart-date-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #334155;
+  background: #ffffff;
+  padding: 0.42rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  user-select: none;
+}
+
+.cobuy-chart-date-pill:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+.cobuy-chart-date-pill.active-filter {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: #818cf8;
+  color: #4f46e5;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.12);
+}
+
+.cobuy-date-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 330px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08);
+  padding: 1rem;
+  z-index: 600;
+  animation: cobuyDropdownIn 0.18s ease-out forwards;
+}
+
+[data-theme="dark"] .cobuy-date-dropdown {
+  background: #1e293b;
+  border-color: #334155;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="dark"] .cobuy-chart-date-pill {
+  background: #1e293b;
+  border-color: #334155;
+  color: #cbd5e1;
+}
+
+[data-theme="dark"] .cobuy-chart-date-pill:hover {
+  background: #334155;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .cobuy-chart-date-pill.active-filter {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: #818cf8;
+  color: #a5b4fc;
+}
+
+@keyframes cobuyDropdownIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.cobuy-chart-tooltip {
+  background: #4f46e5;
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 0.5rem 0.85rem;
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  pointer-events: none;
+}
+
+.cobuy-tooltip-date {
+  font-weight: 500;
+  color: #e0e7ff;
+  font-size: 0.76rem;
+  margin-bottom: 0.2rem;
+}
+
+.cobuy-tooltip-count {
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: #ffffff;
+}
+
+.cobuy-tooltip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ffffff;
+  display: inline-block;
+}
+
+
+/* Key Insights Card */
+.cobuy-insights-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 1.3rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.cobuy-insights-header {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 1.2rem;
+}
+
+.cobuy-insights-title {
+  font-size: 1.12rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+}
+
+.cobuy-insights-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  height: 100%;
+  justify-content: space-around;
+}
+
+.cobuy-insight-item {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+  padding: 0.95rem 1rem;
+  background: #f8fafc;
+  border: 1px solid #f1f5f9;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.cobuy-insight-item:hover {
+  border-color: rgba(99, 102, 241, 0.2);
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+
+.cobuy-insight-icon-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cobuy-insight-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.cobuy-insight-text {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.cobuy-insight-subtext {
+  font-size: 0.77rem;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+/* 5. Dataset Health Bottom Card */
+.cobuy-health-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 1.3rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.cobuy-health-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.15rem;
+}
+
+.cobuy-health-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.cobuy-health-title {
+  font-size: 1.12rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+}
+
+.cobuy-health-subtitle {
+  font-size: 0.82rem;
+  color: #64748b;
+  margin: 0.15rem 0 0 0;
+}
+
+.cobuy-health-view-btn {
+  background: none;
+  border: none;
+  color: #6366f1;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  transition: color 0.15s ease;
+}
+
+.cobuy-health-view-btn:hover {
+  color: #4f46e5;
+  text-decoration: underline;
+}
+
+.cobuy-health-body {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.cobuy-health-indicators {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.65rem;
+  flex: 1;
+}
+
+.cobuy-health-indicator-card {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.65rem 0.65rem;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  min-width: 0;
+}
+
+.cobuy-health-ind-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.cobuy-health-ind-num {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.1;
+}
+
+.cobuy-health-ind-label {
+  font-size: 0.69rem;
+  color: #64748b;
+  margin-top: 0.15rem;
+  white-space: normal;
+  line-height: 1.2;
+}
+
+.cobuy-health-status-box {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1.15rem;
+  border-radius: 14px;
+  border: 1px solid #a7f3d0;
+  background: #ecfdf5;
+  flex-shrink: 0;
+  min-width: 220px;
+}
+
+
+
+.cobuy-health-status-box.warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.cobuy-health-status-text-bold {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: #065f46;
+}
+
+.cobuy-health-status-box.warning .cobuy-health-status-text-bold {
+  color: #b45309;
+}
+
+.cobuy-health-status-text-muted {
+  font-size: 0.77rem;
+  color: #047857;
+  margin-top: 0.15rem;
+}
+
+.cobuy-health-status-box.warning .cobuy-health-status-text-muted {
+  color: #92400e;
+}
+
+/* Modals */
+.cobuy-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.cobuy-modal-box {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 580px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cobuy-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.2rem 1.5rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.cobuy-modal-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+}
+
+.cobuy-modal-close-btn {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.cobuy-modal-close-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.cobuy-modal-body {
+  padding: 1.5rem;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { BrowserRouter as Router, Routes, Route, NavLink, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, NavLink, Navigate, useNavigate, useSearchParams, useLocation, Link } from 'react-router-dom';
 import {
   LayoutDashboard,
   BarChart3,
@@ -22,7 +22,9 @@ import {
   Store,
   CheckCircle2,
   XCircle,
-  Clock
+  Clock,
+  Search,
+  HelpCircle
 } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import Analytics from './pages/Analytics';
@@ -33,6 +35,7 @@ import Dataset from './pages/Dataset';
 import Login, { PendingActivation, JoinPage } from './pages/Login';
 import ActivityLog from './pages/ActivityLog';
 import Logo from './components/Logo';
+import GlobalNavbarSearch from './components/GlobalNavbarSearch';
 import './index.css';
 import axios from 'axios';
 
@@ -489,6 +492,10 @@ const Sidebar = ({ onLogout, user, theme, onToggleTheme, onOpenInvite }) => {
   // Actual security enforcement happens server-side via role column.
   const isAdmin = user?.role === 'shop_admin';
 
+  const location = useLocation();
+  const hasAnalyticsResults = Boolean(sessionStorage.getItem('analytics_results'));
+  const isSetupState = location.pathname === '/analytics' && !hasAnalyticsResults;
+
   return (
     <aside className="sidebar">
       <div className="sidebar-logo" style={{ paddingBottom: '1.25rem' }}>
@@ -519,6 +526,24 @@ const Sidebar = ({ onLogout, user, theme, onToggleTheme, onOpenInvite }) => {
           </NavLink>
         )}
       </nav>
+
+      {/* Quick Guide Card from Reference A & B */}
+      <div className="cobuy-sidebar-guide-card">
+        <div className="cobuy-sidebar-guide-icon">
+          <HelpCircle size={18} />
+        </div>
+        <div className="cobuy-sidebar-guide-title">
+          {isSetupState ? 'Need help getting started?' : 'Not sure how it works?'}
+        </div>
+        <div className="cobuy-sidebar-guide-desc">
+          {isSetupState
+            ? 'Follow the steps to upload your dataset, verify columns, and run analysis to unlock customer recommendations.'
+            : 'This page shows the most frequently bought products, top sellers, and useful recommendations based on your sales data.'}
+        </div>
+        <Link to="/analytics" className="cobuy-sidebar-guide-link">
+          Quick Guide →
+        </Link>
+      </div>
 
       <div className="sidebar-footer">
         {isAdmin && (
@@ -661,13 +686,36 @@ function App() {
             onOpenInvite={() => setShowInvitePanel(true)}
           />
           <main className="main-content" style={{ paddingTop: '6rem' }}>
-            {/* Notification Bell — top right of main content area */}
-            <div style={{
-              position: 'fixed', top: '1.25rem', right: '1.5rem',
-              zIndex: 500, display: 'flex', alignItems: 'center', gap: '0.5rem'
-            }}>
-              <NotificationBell user={user} onLogin={handleLogin} />
-            </div>
+            {/* Global Top Navbar matching Reference Screens A & B */}
+            <header className="cobuy-top-navbar">
+              <GlobalNavbarSearch />
+
+              <div className="cobuy-top-right-group">
+                <button
+                  id="theme-toggle-btn"
+                  onClick={handleToggleTheme}
+                  className="cobuy-top-icon-btn"
+                  title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} mode`}
+                >
+                  {theme === 'dark' ? (
+                    <Sun size={17} style={{ color: '#f59e0b' }} />
+                  ) : (
+                    <Moon size={17} style={{ color: '#6366f1' }} />
+                  )}
+                </button>
+                <NotificationBell user={user} onLogin={handleLogin} />
+
+                <NavLink to="/profile" className="cobuy-user-header-pill">
+                  <div className="cobuy-user-avatar">
+                    {(user?.full_name || user?.name || user?.email || 'JA').charAt(0).toUpperCase()}
+                  </div>
+                  <span className="cobuy-user-name">
+                    {user?.full_name || user?.name || (user?.email ? user.email.split('@')[0] : 'John Andreil')}
+                  </span>
+                  <ChevronDown size={14} style={{ color: 'var(--text-dim)' }} />
+                </NavLink>
+              </div>
+            </header>
             <Routes>
               <Route path="/" element={isAdmin ? <ActivityLog /> : <Dashboard />} />
               <Route path="/analytics" element={!isAdmin ? <Analytics /> : <Navigate to="/" replace />} />

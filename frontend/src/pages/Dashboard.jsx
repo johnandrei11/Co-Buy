@@ -1,883 +1,1431 @@
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import axios from 'axios';
-import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import {
-  TrendingUp,
-  ShoppingCart,
-  Zap,
+  BarChart3,
+  FileText,
+  Package,
+  LayoutGrid,
+  Search,
   ArrowUpRight,
-  Info,
-  Layers,
-  Database,
-  HelpCircle,
-  X,
-  BookOpen,
-  CheckCircle2,
+  ArrowDownRight,
+  TrendingUp,
+  Calendar,
   ChevronDown,
-  ChevronRight,
   Download,
-  RefreshCw
+  RefreshCw,
+  Star,
+  Info,
+  Lightbulb,
+  ShieldCheck,
+  CheckCircle2,
+  AlertTriangle,
+  ArrowRight,
+  X,
+  Database,
+  Filter,
+  SlidersHorizontal,
+  RotateCcw,
+  Check
 } from 'lucide-react';
 import {
+  ResponsiveContainer,
+  ComposedChart,
+  Bar,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  Cell
+  LabelList
 } from 'recharts';
 
-import ActivityLog from './ActivityLog';
-
 const API_BASE = 'http://localhost:5000/api';
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#f43f5e', '#06b6d4'];
-
-const CustomBarTooltip = ({ active, payload, label }) => {
-  if (active && payload && payload.length) {
-    return (
-      <div style={{
-        background: 'var(--card-bg)',
-        backdropFilter: 'blur(12px)',
-        border: '1px solid var(--border-color)',
-        borderRadius: '10px',
-        padding: '0.75rem 1rem',
-        boxShadow: 'var(--card-shadow)',
-        color: 'var(--text-main)'
-      }}>
-        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.3rem', fontFamily: 'var(--font-mono)' }}>{label}</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: payload[0].payload.color || '#10b981' }} />
-          <span style={{ fontSize: '0.9rem', fontWeight: '700', fontFamily: 'var(--font-mono)' }}>
-            {payload[0].value} purchases
-          </span>
-        </div>
-      </div>
-    );
-  }
-  return null;
-};
 
 const Dashboard = () => {
   const [stats, setStats] = useState({
     active: false,
+    dataset_id: null,
+    dataset_name: null,
     total_transactions: 0,
+    total_units_sold: 0,
     unique_items_count: 0,
     top_items: [],
-    recommended_algorithm: 'None'
+    date_range_str: '',
+    upload_date: '',
+    health: null
   });
   const [trends, setTrends] = useState([]);
   const [rules, setRules] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [timeFilter, setTimeFilter] = useState('7D');
-  const [showPatternsModal, setShowPatternsModal] = useState(false);
-  const [expandedRow, setExpandedRow] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
 
-  const toggleRow = (idx) => {
-    setExpandedRow(prev => (prev === idx ? null : idx));
+  // Modals state
+  const [showDatasetModal, setShowDatasetModal] = useState(false);
+  const [showHealthModal, setShowHealthModal] = useState(false);
+  const [availableDatasets, setAvailableDatasets] = useState([]);
+  const [loadingDatasets, setLoadingDatasets] = useState(false);
+
+  const activeDatasetId = stats.dataset_id || localStorage.getItem('activeDatasetId');
+  const activeDatasetName = stats.dataset_name || localStorage.getItem('activeDatasetName');
+
+  // ── Date Formatting Helpers (Dynamic & Adaptive) ──────────────────────────
+  // Handles Excel serials, 8-digit numbers, YYYY/MM/DD, DD/MM/YYYY, MM/DD/YYYY, etc.
+  const parseRawDateParts = (raw) => {
+    if (!raw) return null;
+    let str = String(raw).trim();
+    if (!str || str.toLowerCase() === 'nan' || str.toLowerCase() === 'null') return null;
+
+    // Excel serial number (20000 - 65000)
+    const num = Number(str);
+    if (!isNaN(num) && num >= 20000 && num <= 65000) {
+      const dateObj = new Date(Math.round((num - 25569) * 86400 * 1000));
+      return {
+        year: dateObj.getUTCFullYear(),
+        month: dateObj.getUTCMonth() + 1,
+        day: dateObj.getUTCDate()
+      };
+    }
+
+    // 8-digit integer YYYYMMDD
+    if (/^\d{8}$/.test(str)) {
+      return {
+        year: parseInt(str.substring(0, 4), 10),
+        month: parseInt(str.substring(4, 6), 10),
+        day: parseInt(str.substring(6, 8), 10)
+      };
+    }
+
+    // Strip time portion if present
+    const cleanStr = str.split(/[ T]/)[0].trim();
+    const parts = cleanStr.split(/[-/.]/);
+
+    if (parts.length === 3) {
+      // YYYY/MM/DD or YYYY-MM-DD or YYYY.MM.DD
+      if (parts[0].length === 4 && !isNaN(parts[0])) {
+        return {
+          year: parseInt(parts[0], 10),
+          month: parseInt(parts[1], 10),
+          day: parseInt(parts[2], 10)
+        };
+      }
+      // DD/MM/YYYY or MM/DD/YYYY
+      if (parts[2].length === 4 && !isNaN(parts[2])) {
+        const p0 = parseInt(parts[0], 10);
+        const p1 = parseInt(parts[1], 10);
+        const year = parseInt(parts[2], 10);
+        if (p0 > 12 && p1 <= 12) {
+          // Definitely DD/MM/YYYY
+          return { year, month: p1, day: p0 };
+        }
+        // Default MM/DD/YYYY
+        return { year, month: p0, day: p1 };
+      }
+    }
+
+    // Fallback: Javascript Date parsing
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+      return {
+        year: parsed.getFullYear(),
+        month: parsed.getMonth() + 1,
+        day: parsed.getDate()
+      };
+    }
+
+    return null;
   };
 
+  // Transforms any format: 2026/03/05, 05/03/2026, 2026-03-05 into 'MMM DD' (e.g. 'Mar 05' or 'May 03')
+  const formatDateTick = (dateStr) => {
+    const parsed = parseRawDateParts(dateStr);
+    if (!parsed) return dateStr || '';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const mName = months[parsed.month - 1] || parsed.month;
+    return `${mName} ${String(parsed.day).padStart(2, '0')}`;
+  };
+
+  // Transforms any date into 'MMM DD, YYYY' or 'Month DD, YYYY' (e.g. 'Mar 05, 2026' or 'May 05, 2026')
+  const formatFullDate = (dateStr, fullMonth = false) => {
+    const parsed = parseRawDateParts(dateStr);
+    if (!parsed) return dateStr || '';
+    const monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthsLong = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const mList = fullMonth ? monthsLong : monthsShort;
+    const mName = mList[parsed.month - 1] || parsed.month;
+    return `${mName} ${String(parsed.day).padStart(2, '0')}, ${parsed.year}`;
+  };
+
+  // ── Fetch Dashboard Data ──────────────────────────────────────────────────
+  const fetchDashboardData = async (targetId = null) => {
+    setLoading(true);
+    try {
+      const idToFetch = targetId || localStorage.getItem('activeDatasetId');
+
+      if (!idToFetch) {
+        setStats({
+          active: false,
+          dataset_id: null,
+          dataset_name: null,
+          total_transactions: 0,
+          total_units_sold: 0,
+          unique_items_count: 0,
+          top_items: [],
+          date_range_str: '',
+          upload_date: '',
+          health: null
+        });
+        setTrends([]);
+        setRules([]);
+        setLoading(false);
+        return;
+      }
+
+      // 1. Fetch Stats & Health
+      const statsRes = await axios.get(`${API_BASE}/stats?dataset_id=${idToFetch}`);
+      if (!statsRes.data.active) {
+        localStorage.removeItem('activeDatasetId');
+        localStorage.removeItem('activeDatasetName');
+        setStats({
+          active: false,
+          dataset_id: null,
+          dataset_name: null,
+          total_transactions: 0,
+          total_units_sold: 0,
+          unique_items_count: 0,
+          top_items: [],
+          date_range_str: '',
+          upload_date: '',
+          health: null
+        });
+        setTrends([]);
+        setRules([]);
+        setLoading(false);
+        return;
+      }
+
+      setStats(statsRes.data);
+      if (statsRes.data.dataset_name) {
+        localStorage.setItem('activeDatasetName', statsRes.data.dataset_name);
+      }
+
+      // 2. Fetch Trends (strictly real dataset dates)
+      try {
+        const trendsRes = await axios.get(`${API_BASE}/trends?dataset_id=${idToFetch}`);
+        setTrends(trendsRes.data.trends || []);
+      } catch (e) {
+        console.error('Failed to fetch trends:', e);
+        setTrends([]);
+      }
+
+      // 3. Fetch Discovered Patterns Count (Adaptive Mining)
+      try {
+        const mineRes = await axios.post(`${API_BASE}/mine`, {
+          dataset_id: idToFetch,
+          algorithm: 'auto'
+        });
+        setRules(mineRes.data.rules || []);
+      } catch (e) {
+        console.error('Failed to fetch rules count:', e);
+        setRules([]);
+      }
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+      setStats(prev => ({ ...prev, active: false }));
+      setTrends([]);
+      setRules([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  // ── Open Change Dataset Modal ──────────────────────────────────────────────
+  const handleOpenDatasetModal = async () => {
+    setShowDatasetModal(true);
+    setLoadingDatasets(true);
+    try {
+      const res = await axios.get(`${API_BASE}/datasets`);
+      setAvailableDatasets(res.data.datasets || []);
+    } catch (err) {
+      console.error('Failed to load datasets:', err);
+      setAvailableDatasets([]);
+    } finally {
+      setLoadingDatasets(false);
+    }
+  };
+
+  // ── Switch Active Dataset ──────────────────────────────────────────────────
+  const handleSelectDataset = async (dataset) => {
+    setStats({
+      active: false,
+      dataset_id: dataset.id,
+      dataset_name: dataset.name,
+      total_transactions: 0,
+      total_units_sold: 0,
+      unique_items_count: 0,
+      top_items: [],
+      date_range_str: '',
+      upload_date: '',
+      health: null
+    });
+    setTrends([]);
+    setRules([]);
+    setShowDatasetModal(false);
+
+    localStorage.setItem('activeDatasetId', dataset.id);
+    localStorage.setItem('activeDatasetName', dataset.name);
+
+    try {
+      await axios.post(`${API_BASE}/history/${dataset.id}/activate`);
+    } catch (e) {
+      // background activation
+    }
+
+    await fetchDashboardData(dataset.id);
+  };
+
+  // ── Interactive Date Filter & Granularity State ────────────────────────────
+  const [showDateFilterDropdown, setShowDateFilterDropdown] = useState(false);
+  const [dateFilterPreset, setDateFilterPreset] = useState('all'); // 'all', '7d', '14d', '30d', '90d', 'month', 'custom'
+  const [selectedMonth, setSelectedMonth] = useState(''); // e.g. '2024-05'
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+  const [chartGranularity, setChartGranularity] = useState('daily'); // 'daily', 'weekly', 'monthly'
+  const dateFilterRef = useRef(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dateFilterRef.current && !dateFilterRef.current.contains(e.target)) {
+        setShowDateFilterDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // When trends change, initialize custom dates with dataset bounds
+  useEffect(() => {
+    if (trends && trends.length > 0) {
+      const dates = trends.map(t => t.date).filter(Boolean).sort();
+      if (dates.length > 0) {
+        setCustomStartDate(dates[0]);
+        setCustomEndDate(dates[dates.length - 1]);
+      }
+    }
+  }, [trends]);
+
+  // Min and Max dates present in trends
+  const datasetDateBounds = useMemo(() => {
+    if (!trends || trends.length === 0) return { minDate: '', maxDate: '' };
+    const dates = trends.map(t => t.date).filter(Boolean).sort();
+    return {
+      minDate: dates[0] || '',
+      maxDate: dates[dates.length - 1] || ''
+    };
+  }, [trends]);
+
+  // Extract all distinct months from dataset trends
+  const availableMonths = useMemo(() => {
+    if (!trends || trends.length === 0) return [];
+    const monthsMap = new Map();
+    trends.forEach(t => {
+      if (t.date && t.date.length >= 7) {
+        const ym = t.date.substring(0, 7);
+        const count = monthsMap.get(ym) || 0;
+        monthsMap.set(ym, count + (t.count || 0));
+      }
+    });
+    const monthsNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return Array.from(monthsMap.entries()).map(([ym, totalCount]) => {
+      const parts = ym.split('-');
+      const mIdx = parseInt(parts[1], 10) - 1;
+      const label = `${monthsNames[mIdx] || parts[1]} ${parts[0]}`;
+      return { key: ym, label, count: totalCount };
+    });
+  }, [trends]);
+
+  // Filtered raw trends according to active filter
+  const filteredTrends = useMemo(() => {
+    if (!trends || trends.length === 0) return [];
+
+    if (dateFilterPreset === '7d') {
+      return trends.slice(-7);
+    }
+    if (dateFilterPreset === '14d') {
+      return trends.slice(-14);
+    }
+    if (dateFilterPreset === '30d') {
+      return trends.slice(-30);
+    }
+    if (dateFilterPreset === '90d') {
+      return trends.slice(-90);
+    }
+    if (dateFilterPreset === 'month' && selectedMonth) {
+      return trends.filter(t => t.date && t.date.startsWith(selectedMonth));
+    }
+    if (dateFilterPreset === 'custom' && customStartDate && customEndDate) {
+      return trends.filter(t => t.date && t.date >= customStartDate && t.date <= customEndDate);
+    }
+    return trends; // 'all'
+  }, [trends, dateFilterPreset, selectedMonth, customStartDate, customEndDate]);
+
+  // Dynamic Chart Data Derived Strictly from Dataset Trends (with Granularity Aggregation)
+  const chartData = useMemo(() => {
+    if (!filteredTrends || filteredTrends.length === 0) return [];
+
+    if (chartGranularity === 'monthly') {
+      const map = new Map();
+      filteredTrends.forEach(t => {
+        const ym = t.date ? t.date.substring(0, 7) : 'Unknown';
+        const cur = map.get(ym) || { date: ym, count: 0, daysCount: 0 };
+        cur.count += (t.count || 0);
+        cur.daysCount += 1;
+        map.set(ym, cur);
+      });
+      const monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const monthsLong = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      return Array.from(map.entries()).map(([ym, val]) => {
+        const parts = ym.split('-');
+        const mIdx = parseInt(parts[1], 10) - 1;
+        const disp = `${monthsShort[mIdx] || parts[1]} '${parts[0] ? parts[0].slice(-2) : ''}`;
+        const full = `${monthsLong[mIdx] || parts[1]} ${parts[0]}`;
+        return {
+          date: ym,
+          displayDate: disp,
+          fullDate: full,
+          count: val.count,
+          subtext: `${val.daysCount} recorded day${val.daysCount > 1 ? 's' : ''}`
+        };
+      });
+    }
+
+    if (chartGranularity === 'weekly') {
+      const weeks = [];
+      const chunkSize = 7;
+      for (let i = 0; i < filteredTrends.length; i += chunkSize) {
+        const slice = filteredTrends.slice(i, i + chunkSize);
+        const sumCount = slice.reduce((acc, curr) => acc + (curr.count || 0), 0);
+        const dStart = slice[0].date;
+        const dEnd = slice[slice.length - 1].date;
+        weeks.push({
+          date: dStart,
+          displayDate: `${formatDateTick(dStart)} - ${formatDateTick(dEnd)}`,
+          fullDate: `${formatFullDate(dStart)} – ${formatFullDate(dEnd)}`,
+          count: sumCount,
+          subtext: `${slice.length} days (${sumCount.toLocaleString()} txs)`
+        });
+      }
+      return weeks;
+    }
+
+    // Default: Daily
+    return filteredTrends.map(t => {
+      const dateStr = t.date || '';
+      const displayDate = t.display_date || formatDateTick(dateStr);
+      const fullDate = t.full_date || formatFullDate(dateStr);
+      return {
+        ...t,
+        displayDate,
+        fullDate,
+        count: t.count || 0
+      };
+    });
+  }, [filteredTrends, chartGranularity]);
+
+  // Dynamic XAxis interval to avoid tick label collision
+  const xAxisInterval = useMemo(() => {
+    const len = chartData.length;
+    if (len <= 7) return 0;
+    if (len <= 12) return 1;
+    return Math.ceil(len / 7);
+  }, [chartData.length]);
+
+  // Chart Header Date Range Label (Reflects current date filter or dataset range)
+  const chartDateRange = useMemo(() => {
+    if (dateFilterPreset === '7d') {
+      const span = filteredTrends.length > 0 ? ` (${formatDateTick(filteredTrends[0].date)} – ${formatFullDate(filteredTrends[filteredTrends.length - 1].date)})` : '';
+      return `Last 7 Days${span}`;
+    }
+    if (dateFilterPreset === '14d') {
+      const span = filteredTrends.length > 0 ? ` (${formatDateTick(filteredTrends[0].date)} – ${formatFullDate(filteredTrends[filteredTrends.length - 1].date)})` : '';
+      return `Last 14 Days${span}`;
+    }
+    if (dateFilterPreset === '30d') {
+      const span = filteredTrends.length > 0 ? ` (${formatDateTick(filteredTrends[0].date)} – ${formatFullDate(filteredTrends[filteredTrends.length - 1].date)})` : '';
+      return `Last 30 Days${span}`;
+    }
+    if (dateFilterPreset === '90d') {
+      const span = filteredTrends.length > 0 ? ` (${formatDateTick(filteredTrends[0].date)} – ${formatFullDate(filteredTrends[filteredTrends.length - 1].date)})` : '';
+      return `Last 90 Days${span}`;
+    }
+    if (dateFilterPreset === 'month' && selectedMonth) {
+      const found = availableMonths.find(m => m.key === selectedMonth);
+      return found ? found.label : selectedMonth;
+    }
+    if (dateFilterPreset === 'custom' && customStartDate && customEndDate) {
+      return `${formatDateTick(customStartDate)} – ${formatFullDate(customEndDate)}`;
+    }
+    // Full dataset range ('all')
+    if (filteredTrends.length > 1) {
+      return `${formatDateTick(filteredTrends[0].date)} – ${formatFullDate(filteredTrends[filteredTrends.length - 1].date)}`;
+    }
+    if (filteredTrends.length === 1) {
+      return formatFullDate(filteredTrends[0].date);
+    }
+    if (stats.date_range_str && stats.date_range_str !== 'No dates recorded') {
+      return stats.date_range_str;
+    }
+    if (stats.upload_date) {
+      return formatFullDate(stats.upload_date);
+    }
+    return 'All Time';
+  }, [dateFilterPreset, filteredTrends, selectedMonth, availableMonths, customStartDate, customEndDate, stats.date_range_str, stats.upload_date]);
+
+  // Total transactions in current filtered range
+  const filteredTotalTransactions = useMemo(() => {
+    return filteredTrends.reduce((sum, t) => sum + (t.count || 0), 0);
+  }, [filteredTrends]);
+
+  // Active Dataset Formatted Date (Strictly from Dataset Data)
+  const formattedActiveDate = useMemo(() => {
+    if (stats.date_range_str && stats.date_range_str !== 'No dates recorded') {
+      return stats.date_range_str;
+    }
+    if (trends && trends.length > 0) {
+      return trends.length > 1
+        ? `${formatDateTick(trends[0].date)} – ${formatFullDate(trends[trends.length - 1].date)}`
+        : formatFullDate(trends[0].date);
+    }
+    if (stats.upload_date) {
+      return formatFullDate(stats.upload_date);
+    }
+    return 'Recorded Period';
+  }, [stats.date_range_str, trends, stats.upload_date]);
+
+  // Dynamic Transaction Growth Trend (between latest periods if available)
+  const transactionTrend = useMemo(() => {
+    if (trends && trends.length >= 2) {
+      const latest = trends[trends.length - 1].count;
+      const prev = trends[trends.length - 2].count;
+      const diff = latest - prev;
+      const pct = Math.round((diff / (prev || 1)) * 100);
+      return {
+        hasTrend: true,
+        isPositive: pct >= 0,
+        text: `${pct >= 0 ? '+' : ''}${pct}% vs. prev date`
+      };
+    }
+    return {
+      hasTrend: false,
+      text: 'Active records'
+    };
+  }, [trends]);
+
+  // Custom Chart Tooltip (Floating Royal Purple Bubble)
+  const CustomChartTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="cobuy-chart-tooltip">
+          <div className="cobuy-tooltip-date">{data.fullDate || data.displayDate}</div>
+          <div className="cobuy-tooltip-count">
+            <span className="cobuy-tooltip-dot" />
+            {data.count.toLocaleString()} transactions
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  // ── Key Insights Computations (Strictly Dynamic) ───────────────────────────
+  const topProduct = useMemo(() => {
+    return (stats.top_items && stats.top_items.length > 0) ? stats.top_items[0] : null;
+  }, [stats.top_items]);
+
+  const salesConcentration = useMemo(() => {
+    if (!stats.top_items || stats.top_items.length < 3) return null;
+    const top3Vol = stats.top_items.slice(0, 3).reduce((sum, item) => sum + (item.value || 0), 0);
+    const totalVol = stats.total_units_sold || stats.total_transactions || 1;
+    const share = Math.round((top3Vol / totalVol) * 100);
+    return {
+      share,
+      isConcentrated: share >= 40
+    };
+  }, [stats.top_items, stats.total_units_sold, stats.total_transactions]);
+
+  // ── PDF Export Presentation ───────────────────────────────────────────────
   const handleExportPDF = async () => {
     setIsExporting(true);
     try {
-      console.log('Starting PDF presentation generation...');
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
       const margin = 14;
-      const contentWidth = pageWidth - (margin * 2);
 
-      // Helper for clean footers on all pages
-      const addPageFooter = (pageNum, totalPages) => {
-        pdf.setDrawColor(226, 232, 240);
-        pdf.line(margin, pageHeight - 12, pageWidth - margin, pageHeight - 12);
-        
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(8);
-        pdf.setTextColor(148, 163, 184);
-        pdf.text('CoBuy Market Insights • Confidential Store Executive Report', margin, pageHeight - 6);
-        pdf.text(`Page ${pageNum} of ${totalPages}`, pageWidth - margin, pageHeight - 6, { align: 'right' });
-      };
-
-      // =========================================================================
-      // PAGE 1: EXECUTIVE DASHBOARD & STORE ACTIVITY
-      // =========================================================================
-      
-      // 1. Top Header Banner
-      pdf.setFillColor(30, 27, 75); // Royal Navy #1e1b4b
-      pdf.rect(0, 0, pageWidth, 26, 'F');
-
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(18);
-      pdf.text('CoBuy', margin, 14);
-
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(10);
-      pdf.setTextColor(199, 210, 254);
-      pdf.text('Executive Retail Market Analysis Report', margin + 24, 14);
-
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(8);
-      pdf.setTextColor(226, 232, 240);
-      const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-      pdf.text(`Report Date: ${dateStr}`, pageWidth - margin, 14, { align: 'right' });
-
-      let y = 32;
-
-      // 2. Store Metadata Ribbon
-      pdf.setFillColor(248, 250, 252);
-      pdf.setDrawColor(226, 232, 240);
-      pdf.roundedRect(margin, y, contentWidth, 16, 3, 3, 'FD');
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(8.5);
-      pdf.setTextColor(71, 85, 105);
-      
-      pdf.text('STORE DATASET:', margin + 4, y + 6);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(15, 23, 42);
-      pdf.text((localStorage.getItem('activeDatasetName') || 'Store Transactions').substring(0, 28), margin + 31, y + 6);
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(71, 85, 105);
-      pdf.text('TOTAL TRANSACTIONS:', margin + 4, y + 11.5);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(15, 23, 42);
-      pdf.text(`${(stats.total_transactions || 0).toLocaleString()} receipts`, margin + 40, y + 11.5);
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(71, 85, 105);
-      pdf.text('CATALOG ITEMS:', margin + 105, y + 6);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(15, 23, 42);
-      pdf.text(`${stats.unique_items_count || 0} unique products`, margin + 132, y + 6);
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(71, 85, 105);
-      pdf.text('PATTERNS FOUND:', margin + 105, y + 11.5);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(79, 70, 229);
-      pdf.text(`${rules.length} buying associations`, margin + 134, y + 11.5);
-
-      y += 22;
-
-      // 3. Executive KPI Cards (4 Grid Cards)
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(11);
-      pdf.setTextColor(15, 23, 42);
-      pdf.text('1. Executive Summary KPIs', margin, y);
-      y += 5;
-
-      const cardGap = 4;
-      const cardW = (contentWidth - (cardGap * 3)) / 4;
-      
-      const kpis = [
-        { label: 'Total Receipts', value: (stats.total_transactions || 0).toLocaleString(), color: [79, 70, 229] },
-        { label: 'Catalog Items', value: `${stats.unique_items_count || 0}`, color: [16, 185, 129] },
-        { label: 'Patterns Found', value: `${rules.length}`, color: [245, 158, 11] },
-        { label: 'Top Product', value: stats.top_items?.[0]?.name ? stats.top_items[0].name.substring(0, 12) : 'Milk', color: [124, 58, 237] }
-      ];
-
-      kpis.forEach((kpi, idx) => {
-        const x = margin + idx * (cardW + cardGap);
-        
-        pdf.setFillColor(255, 255, 255);
-        pdf.setDrawColor(226, 232, 240);
-        pdf.roundedRect(x, y, cardW, 20, 2.5, 2.5, 'FD');
-
-        pdf.setFillColor(kpi.color[0], kpi.color[1], kpi.color[2]);
-        pdf.rect(x, y + 2, 2.5, 16, 'F');
-
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(7.5);
-        pdf.setTextColor(100, 116, 139);
-        pdf.text(kpi.label, x + 6, y + 6);
-
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(11);
-        pdf.setTextColor(15, 23, 42);
-        pdf.text(kpi.value, x + 6, y + 14);
-      });
-
-      y += 26;
-
-      // 4. Store Sales Activity Chart ("Daily Transaction Volume" - Native Vector PDF Bar Chart)
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(10.5);
-      pdf.setTextColor(15, 23, 42);
-      pdf.text('2. Store Sales Activity Graph (Daily Transaction Volume)', margin, y);
-      y += 5;
-
-      const chartBoxH = 64;
-      const chartBoxW = contentWidth;
-
-      // Clean Light Card Container Background
-      pdf.setFillColor(250, 252, 255);
-      pdf.setDrawColor(226, 232, 240);
-      pdf.roundedRect(margin, y, chartBoxW, chartBoxH, 3, 3, 'FD');
-
-      // Card Header inside PDF Chart: "Daily Transaction Volume"
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(9.5);
-      pdf.setTextColor(15, 23, 42);
-      pdf.text('Daily Transaction Volume', margin + 10, y + 8.5);
-
-      const chartAreaX = margin + 25;
-      const chartAreaY = y + 16;
-      const chartAreaW = chartBoxW - 31;
-      const chartAreaH = chartBoxH - 26;
-
-      // Vertical Y-Axis Title Label: "Number of Receipts" (Centered vertically along the Y-axis next to tick 320)
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(6.5);
-      pdf.setTextColor(30, 27, 75);
-      pdf.text('Number of Receipts', margin + 12.5, chartAreaY + (chartAreaH / 2), { angle: 90, align: 'center' });
-
-      // Calculate grid steps
-      const maxVal = maxCount > 0 ? maxCount : 100;
-      const gridStep = Math.ceil(maxVal / 4 / 20) * 20 || 50;
-      const topTick = gridStep * 4 > maxVal ? gridStep * 4 : Math.ceil(maxVal / 50) * 50;
-      const yTicks = [0, Math.round(topTick * 0.25), Math.round(topTick * 0.5), Math.round(topTick * 0.75), topTick];
-
-      // Axis Lines
-      pdf.setDrawColor(203, 213, 225);
-      pdf.setLineWidth(0.4);
-      pdf.line(chartAreaX, chartAreaY, chartAreaX, chartAreaY + chartAreaH);
-      pdf.line(chartAreaX, chartAreaY + chartAreaH, chartAreaX + chartAreaW, chartAreaY + chartAreaH);
-
-      // Draw Grid Lines & Y Tick Labels
-      yTicks.forEach(tickVal => {
-        const tickY = chartAreaY + chartAreaH - ((tickVal / topTick) * chartAreaH);
-        
-        if (tickVal > 0) {
-          pdf.setDrawColor(241, 245, 249);
-          pdf.setLineWidth(0.2);
-          pdf.line(chartAreaX, tickY, chartAreaX + chartAreaW, tickY);
-        }
-        
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(6);
-        pdf.setTextColor(100, 116, 139);
-        pdf.text(`${tickVal}`, chartAreaX - 3, tickY + 1.5, { align: 'right' });
-      });
-
-      // Draw Clean Vector Bars with Values on top
-      const numBars = filteredTrends.length;
-      if (numBars > 0) {
-        const barGap = 4;
-        const totalBarWidth = (chartAreaW - (barGap * (numBars + 1))) / numBars;
-        const barW = Math.min(18, totalBarWidth);
-        
-        filteredTrends.forEach((t, i) => {
-          const barX = chartAreaX + barGap + i * (barW + barGap);
-          const barH = Math.max(2, (t.count / topTick) * chartAreaH);
-          const barY = chartAreaY + chartAreaH - barH;
-          const isPeak = t.count === maxCount && maxCount > 0;
-          
-          if (isPeak) {
-            pdf.setFillColor(124, 58, 237); // Vibrant accent purple
-          } else {
-            pdf.setFillColor(99, 102, 241);  // Primary indigo
-          }
-          
-          pdf.rect(barX, barY, barW, barH, 'F');
-          
-          // Value on top of bar
-          pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(5.5);
-          pdf.setTextColor(isPeak ? 124 : 79, isPeak ? 58 : 70, isPeak ? 237 : 229);
-          pdf.text(`${t.count}`, barX + barW / 2, barY - 1.5, { align: 'center' });
-
-          // Date label on X axis
-          pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(6);
-          pdf.setTextColor(100, 116, 139);
-          let dateLabel = t.date;
-          if (dateLabel && dateLabel.includes('-')) {
-            const parts = dateLabel.split('-');
-            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            const mIdx = parseInt(parts[1], 10) - 1;
-            dateLabel = `${months[mIdx] || parts[1]} ${parts[2]}`;
-          }
-          pdf.text(dateLabel, barX + barW / 2, chartAreaY + chartAreaH + 4, { align: 'center' });
-        });
-      }
-
-      // Horizontal Flat X-Axis Title Label: "Transaction Date"
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(6.5);
-      pdf.setTextColor(30, 27, 75);
-      pdf.text('Transaction Date', chartAreaX + (chartAreaW / 2), chartAreaY + chartAreaH + 8.5, { align: 'center' });
-
-      y += chartBoxH + 4;
-
-      // Graph Interpretation block (Formatted Executive Card Box)
-      const minCount = filteredTrends.length > 0 ? Math.min(...filteredTrends.map(t => t.count)) : 0;
-      const peakStr = peakDay ? `Peak recorded volume occurred on ${peakDay.date} with ${peakDay.count} receipts.` : '';
-      const interpText = `Daily transaction volume ranges between ${minCount} and ${maxCount} receipts per day. ${peakStr} Management can use peak volumes for staff scheduling and stock prep.`;
-      
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(7);
-      const splitInterp = pdf.splitTextToSize(interpText, contentWidth - 14);
-      const interpCardH = Math.max(13, splitInterp.length * 3.5 + 8);
-
-      pdf.setFillColor(248, 250, 252);
-      pdf.setDrawColor(226, 232, 240);
-      pdf.roundedRect(margin, y, contentWidth, interpCardH, 2, 2, 'FD');
-
+      // Header Banner
       pdf.setFillColor(79, 70, 229);
-      pdf.rect(margin, y, 2.5, interpCardH, 'F');
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(7.5);
-      pdf.setTextColor(30, 27, 75);
-      pdf.text('What this graph means for your store:', margin + 6, y + 4.8);
-
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(7);
-      pdf.setTextColor(71, 85, 105);
-      pdf.text(splitInterp, margin + 6, y + 9);
-
-      y += interpCardH + 5;
-
-      // 5. Top 5 Selling Products Section (Fills Page 1 perfectly!)
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(11);
-      pdf.setTextColor(15, 23, 42);
-      pdf.text('3. Top Selling Products Summary', margin, y);
-      y += 5;
-
-      pdf.setFillColor(241, 245, 249);
-      pdf.rect(margin, y, contentWidth, 6, 'F');
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(7.5);
-      pdf.setTextColor(71, 85, 105);
-      pdf.text('Rank & Product Name', margin + 4, y + 4.2);
-      pdf.text('Quantity Sold', margin + 90, y + 4.2);
-      pdf.text('Store Sales Share (%)', margin + 140, y + 4.2);
-      y += 6;
-
-      const topProducts = (stats.top_items || []).slice(0, 4);
-
-      topProducts.forEach((item, idx) => {
-        if (idx % 2 === 1) {
-          pdf.setFillColor(248, 250, 252);
-          pdf.rect(margin, y, contentWidth, 6.5, 'F');
-        }
-        
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(8);
-        pdf.setTextColor(79, 70, 229);
-        pdf.text(`#${idx + 1}`, margin + 4, y + 4.5);
-
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(15, 23, 42);
-        pdf.text(item.name, margin + 14, y + 4.5);
-
-        pdf.text(`${(item.count || 0).toLocaleString()} units`, margin + 90, y + 4.5);
-
-        const share = (((item.count || 0) / (stats.total_transactions || 1)) * 100).toFixed(1);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(16, 185, 129);
-        pdf.text(`${share}% of transactions`, margin + 140, y + 4.5);
-
-        y += 6.5;
-      });
-
-      addPageFooter(1, 2);
-
-      // =========================================================================
-      // PAGE 2: STRONGEST BUYING PATTERNS & RECOMMENDATIONS
-      // =========================================================================
-      pdf.addPage();
-      y = 12;
-
-      pdf.setFillColor(30, 27, 75);
-      pdf.rect(0, 0, pageWidth, 16, 'F');
-
+      pdf.rect(0, 0, pageWidth, 24, 'F');
       pdf.setTextColor(255, 255, 255);
       pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(16);
+      pdf.text('CoBuy — Market Insights Overview', margin, 15);
+
+      let y = 34;
+
+      // Active Dataset Summary
+      pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(11);
-      pdf.text('CoBuy Executive Store Analysis Report — Buying Patterns & Strategies', margin, 11);
-      
+      pdf.setTextColor(30, 41, 59);
+      pdf.text('Active Dataset:', margin, y);
       pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(8);
-      pdf.setTextColor(199, 210, 254);
-      pdf.text(`Date: ${dateStr}`, pageWidth - margin, 11, { align: 'right' });
-
-      y = 24;
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(11);
-      pdf.setTextColor(15, 23, 42);
-      pdf.text('4. Strongest Buying Patterns (Co-occurrence Rules)', margin, y);
-      y += 5;
-
-      pdf.setFillColor(30, 27, 75);
-      pdf.rect(margin, y, contentWidth, 8, 'F');
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(8);
-      pdf.setTextColor(255, 255, 255);
-      pdf.text('IF THEY BUY...', margin + 4, y + 5.5);
-      pdf.text('...THEY ALSO BUY', margin + 55, y + 5.5);
-      pdf.text('COMMON %', margin + 105, y + 5.5);
-      pdf.text('LIKELY %', margin + 132, y + 5.5);
-      pdf.text('STRENGTH', margin + 160, y + 5.5);
-      y += 8;
-
-      const rulesToRender = sortedRules.length > 0 ? sortedRules : rules.slice(0, 10);
-      rulesToRender.forEach((rule, idx) => {
-        if (y > pageHeight - 75) {
-          addPageFooter(2, 2);
-          pdf.addPage();
-          y = 20;
-        }
-
-        if (idx % 2 === 1) {
-          pdf.setFillColor(248, 250, 252);
-          pdf.rect(margin, y, contentWidth, 7, 'F');
-        }
-        pdf.setDrawColor(241, 245, 249);
-        pdf.line(margin, y + 7, pageWidth - margin, y + 7);
-
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(8);
-        pdf.setTextColor(15, 23, 42);
-        pdf.text(rule.antecedents.join(', ').substring(0, 26), margin + 4, y + 5);
-
-        pdf.setTextColor(79, 70, 229);
-        pdf.text(rule.consequents.join(', ').substring(0, 26), margin + 55, y + 5);
-
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(71, 85, 105);
-        pdf.text(`${(rule.support * 100).toFixed(1)}%`, margin + 105, y + 5);
-
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(rule.confidence >= 0.7 ? 16 : 245, rule.confidence >= 0.7 ? 185 : 158, rule.confidence >= 0.7 ? 129 : 11);
-        pdf.text(`${(rule.confidence * 100).toFixed(1)}%`, margin + 132, y + 5);
-
-        pdf.setTextColor(79, 70, 229);
-        pdf.text(`${rule.lift.toFixed(2)}x`, margin + 160, y + 5);
-
-        y += 7;
-      });
+      pdf.setTextColor(71, 85, 105);
+      pdf.text(
+        `${activeDatasetName || 'Dataset'} (${stats.total_transactions.toLocaleString()} transactions • ${stats.unique_items_count} products • ${formattedActiveDate})`,
+        margin + 32,
+        y
+      );
 
       y += 10;
+      pdf.setDrawColor(226, 232, 240);
+      pdf.line(margin, y, pageWidth - margin, y);
+      y += 10;
 
+      // KPI Metrics Box
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(11);
-      pdf.setTextColor(15, 23, 42);
-      pdf.text('5. Recommended Store Strategies', margin, y);
+      pdf.setFontSize(12);
+      pdf.setTextColor(30, 41, 59);
+      pdf.text('Key Performance Indicators', margin, y);
+      y += 8;
+
+      pdf.setFontSize(9);
+      pdf.setTextColor(100, 116, 139);
+      pdf.text(`• Total Transactions: ${stats.total_transactions.toLocaleString()}`, margin + 4, y);
       y += 6;
+      pdf.text(`• Units Sold: ${(stats.total_units_sold || stats.total_transactions).toLocaleString()} items`, margin + 4, y);
+      y += 6;
+      pdf.text(`• Products Sold: ${stats.unique_items_count.toLocaleString()} active products`, margin + 4, y);
+      y += 6;
+      pdf.text(`• Discovered Buying Patterns: ${rules.length} patterns discovered`, margin + 4, y);
+      y += 12;
 
-      const recommendationsList = [
-        {
-          title: 'Strategic Shelf Placement',
-          desc: 'Place high-confidence pairing products (such as Soda, Eggs, and Sugar) on adjacent shelves or prominent counter displays to trigger immediate impulse buys.'
-        },
-        {
-          title: 'Combo Bundle Promotion',
-          desc: 'Package top co-occurring item pairs together as a discounted combo deal to boost average order value and customer transaction size.'
-        },
-        {
-          title: 'Targeted Store Signage',
-          desc: 'Install shelf tags ("Customers who bought X also picked up Y") near anchor items to guide customer shopping habits and increase cross-category discovery.'
-        }
-      ];
+      // Key Insights Section
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(12);
+      pdf.setTextColor(30, 41, 59);
+      pdf.text('Key Insights', margin, y);
+      y += 8;
 
-      recommendationsList.forEach((rec, idx) => {
-        const cardH = 13;
-        pdf.setFillColor(248, 250, 252);
-        pdf.setDrawColor(226, 232, 240);
-        pdf.roundedRect(margin, y, contentWidth, cardH, 2, 2, 'FD');
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(51, 65, 85);
+      if (topProduct) {
+        pdf.text(`1. Best-Selling Product: ${topProduct.name} recorded ${topProduct.value.toLocaleString()} units sold.`, margin + 4, y);
+        y += 6;
+      }
+      pdf.text(`2. Sales Concentration: Sales volume spans across ${stats.unique_items_count} catalogued products.`, margin + 4, y);
+      y += 6;
+      pdf.text(`3. Purchasing Patterns: ${rules.length > 0 ? `${rules.length} association rules discovered for product placement.` : 'Limited purchasing patterns detected under current thresholds.'}`, margin + 4, y);
+      y += 12;
 
-        pdf.setFillColor(79, 70, 229);
-        pdf.rect(margin, y, 2.5, cardH, 'F');
+      // Dataset Health Section
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(12);
+      pdf.setTextColor(30, 41, 59);
+      pdf.text('Dataset Health & Validation', margin, y);
+      y += 8;
 
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(8.5);
-        pdf.setTextColor(30, 27, 75);
-        pdf.text(`Tip ${idx + 1}: ${rec.title}`, margin + 6, y + 5);
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(16, 185, 129);
+      pdf.text(`[✓] Status: ${stats.health?.status_label || 'Ready'} — ${stats.health?.message || 'Data is complete and ready.'}`, margin + 4, y);
+      y += 6;
+      pdf.setTextColor(71, 85, 105);
+      pdf.text(`[✓] Valid Transactions: ${stats.total_transactions.toLocaleString()}`, margin + 4, y);
+      y += 5;
+      pdf.text(`[✓] Unique Products: ${stats.unique_items_count}`, margin + 4, y);
+      y += 5;
+      pdf.text(`[✓] Date Coverage: ${formattedActiveDate}`, margin + 4, y);
+      y += 5;
+      pdf.text(`[✓] Missing Product Names: ${stats.health?.missing_names_count || 0}`, margin + 4, y);
 
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(7.5);
-        pdf.setTextColor(71, 85, 105);
-        
-        const splitText = pdf.splitTextToSize(rec.desc, contentWidth - 12);
-        pdf.text(splitText, margin + 6, y + 9.5);
+      // Footer
+      pdf.setDrawColor(226, 232, 240);
+      pdf.line(margin, 280, pageWidth - margin, 280);
+      pdf.setFontSize(8);
+      pdf.setTextColor(148, 163, 184);
+      pdf.text('CoBuy Market Insights • Confidential Business Report', margin, 286);
+      pdf.text(new Date().toLocaleDateString(), pageWidth - margin, 286, { align: 'right' });
 
-        y += cardH + 4;
-      });
-
-      addPageFooter(2, 2);
-
-      const fileName = `CoBuy_Analysis_Report_${new Date().toISOString().slice(0, 10)}.pdf`;
-      const pdfBlob = pdf.output('blob');
-      const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
-      const fileUrl = URL.createObjectURL(pdfFile);
-
-      const downloadLink = document.createElement('a');
-      downloadLink.href = fileUrl;
-      downloadLink.download = fileName;
-      downloadLink.style.display = 'none';
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-
-      setTimeout(() => {
-        if (document.body.contains(downloadLink)) {
-          document.body.removeChild(downloadLink);
-        }
-        URL.revokeObjectURL(fileUrl);
-      }, 1000);
-
-      console.log('Stunning PDF report presentation exported successfully!');
+      pdf.save(`CoBuy_Market_Insights_${activeDatasetName ? activeDatasetName.replace(/\.[^/.]+$/, "") : 'Report'}.pdf`);
     } catch (err) {
-      console.error('Error generating PDF presentation:', err);
+      console.error('Failed to generate PDF:', err);
     } finally {
       setIsExporting(false);
     }
   };
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        setLoading(true);
-        const activeDatasetId = localStorage.getItem('activeDatasetId');
-        
-        if (!activeDatasetId) {
-          setStats({
-            active: false,
-            total_transactions: 0,
-            unique_items_count: 0,
-            top_items: [],
-            recommended_algorithm: 'None'
-          });
-          setTrends([]);
-          setRules([]);
-          return;
-        }
-
-        const statsRes = await axios.get(`${API_BASE}/stats?dataset_id=${activeDatasetId}`);
-
-        if (!statsRes.data.active) {
-          localStorage.removeItem('activeDatasetId');
-          localStorage.removeItem('activeDatasetName');
-          setStats({
-            active: false,
-            total_transactions: 0,
-            unique_items_count: 0,
-            top_items: [],
-            recommended_algorithm: 'None'
-          });
-          setTrends([]);
-          setRules([]);
-          return;
-        }
-
-        setStats(statsRes.data);
-
-        // Get trends
-        const trendsRes = await axios.get(`${API_BASE}/trends?dataset_id=${activeDatasetId}`);
-        setTrends(trendsRes.data.trends || []);
-
-        // Run adaptive mining to show high-confidence rules
-        const mineRes = await axios.post(`${API_BASE}/mine`, {
-          algorithm: 'auto',
-          dataset_id: activeDatasetId
-        });
-        setRules(mineRes.data.rules || []);
-      } catch (err) {
-        console.error("Error loading dashboard data:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDashboardData();
-  }, []);
-
-  // Format category/pie chart data based on top items
-  const getPieData = () => {
-    if (!stats.top_items || stats.top_items.length === 0) return [];
-    return stats.top_items.slice(0, 5).map(item => ({
-      name: item.name,
-      value: item.value
-    }));
-  };
-
-  const pieData = getPieData();
-  const totalItemCount = pieData.reduce((sum, item) => sum + item.value, 0);
-  const maxPieValue = pieData.length > 0 ? Math.max(...pieData.map(d => d.value)) : 1;
-
-  // Calculate trends peak & filtering
-  const filteredTrends = trends.slice(
-    timeFilter === '7D' ? Math.max(0, trends.length - 7) : timeFilter === '30D' ? Math.max(0, trends.length - 30) : 0
-  );
-  const maxCount = filteredTrends.length > 0 ? Math.max(...filteredTrends.map(t => t.count)) : 0;
-  const peakDay = filteredTrends.find(t => t.count === maxCount);
-
-  // Format high confidence rules (top 5 sorted by confidence descending)
-  const getFilteredRules = (rawRules) => {
-    const seen = new Map();
-    rawRules.forEach(rule => {
-      const key = [...rule.antecedents, ...rule.consequents].sort().join(',');
-      const existing = seen.get(key);
-      if (!existing || rule.confidence > existing.confidence) {
-        seen.set(key, rule);
-      }
-    });
-    return Array.from(seen.values());
-  };
-
-  const sortedRules = getFilteredRules(rules)
-    .sort((a, b) => b.confidence - a.confidence)
-    .slice(0, 5);
-
   return (
-    <div className="fade-in">
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h1 className="page-title">
-            <TrendingUp size={28} style={{ color: 'var(--primary-color)' }} />
-            Market Insights
-          </h1>
-          <p className="page-subtitle">Specialized buying pattern finding for your retail niche.</p>
+    <div className="cobuy-dash-container fade-in">
+      {/* ── 1. Header Row (Market Insights + Export Report ⌵) ── */}
+      <div className="cobuy-dash-header">
+        <div className="cobuy-dash-header-left">
+          <div className="cobuy-dash-header-icon">
+            <BarChart3 size={24} />
+          </div>
+          <div>
+            <h1 className="cobuy-dash-title">Market Insights</h1>
+            <p className="cobuy-dash-subtitle">Overview of your sales performance and buying behavior.</p>
+          </div>
         </div>
+
         {stats.active && (
           <button
+            type="button"
+            className="cobuy-export-btn"
             onClick={handleExportPDF}
             disabled={isExporting}
-            className="btn btn-primary"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.45rem',
-              padding: '0.5rem 1.15rem',
-              fontSize: '0.85rem',
-              fontWeight: '600',
-              cursor: isExporting ? 'not-allowed' : 'pointer',
-              borderRadius: '8px'
-            }}
+            title="Download PDF Market Insights report"
           >
-            {isExporting ? (
-              <>
-                <RefreshCw size={16} className="spin" /> Generating PDF...
-              </>
-            ) : (
-              <>
-                <Download size={16} /> Export Report
-              </>
-            )}
+            {isExporting ? <RefreshCw size={14} className="spin" /> : <Download size={15} />}
+            <span>{isExporting ? 'Generating...' : 'Export Report'}</span>
+            <ChevronDown size={14} style={{ color: '#94a3b8' }} />
           </button>
         )}
       </div>
 
       {loading ? (
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '5rem 2rem', textAlign: 'center' }}>
-          <RefreshCw size={36} className="spin" style={{ color: 'var(--primary-color)', marginBottom: '1rem' }} />
-          <div style={{ color: 'var(--text-muted)', fontSize: '0.95rem', fontWeight: '500' }}>Loading market insights & pattern analytics...</div>
+        <div className="card" style={{ padding: '4rem 2rem', textAlign: 'center' }}>
+          <RefreshCw size={36} className="spin" style={{ color: 'var(--primary-color)', margin: '0 auto 1rem' }} />
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.95rem', fontWeight: '600' }}>
+            Loading active dataset overview & sales insights...
+          </div>
         </div>
       ) : !stats.active ? (
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '5rem 2rem', background: 'rgba(255, 255, 255, 0.01)', borderStyle: 'dashed', textAlign: 'center' }}>
-          <Database size={48} style={{ color: 'var(--text-dim)', marginBottom: '1.5rem' }} />
-          <h3 style={{ fontSize: '1.5rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '0.75rem' }}>No Active Business Data Found</h3>
-          <p style={{ color: 'var(--text-muted)', maxWidth: '520px', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '1.5rem' }}>
-            There is currently no active dataset or running data in Analytics. Upload a transaction CSV file or select a dataset in **Analytics** to view market insights and buying patterns.
+        /* Empty State (No Dataset Selected) */
+        <div className="card" style={{ padding: '4.5rem 2rem', textAlign: 'center', background: 'var(--card-bg)' }}>
+          <Database size={48} style={{ color: 'var(--text-dim)', margin: '0 auto 1.25rem' }} />
+          <h3 style={{ fontSize: '1.35rem', fontWeight: '800', color: 'var(--text-main)', marginBottom: '0.5rem' }}>
+            No Active Dataset Found
+          </h3>
+          <p style={{ color: 'var(--text-muted)', maxWidth: '480px', margin: '0 auto 1.5rem', fontSize: '0.88rem', lineHeight: '1.6' }}>
+            There is currently no active dataset loaded for your account. Please select a historical file from History or upload sales data in Analytics to view your business overview.
           </p>
-          <a href="/analytics" className="btn btn-primary" style={{ padding: '0.75rem 2rem', textDecoration: 'none' }}>
-            Go to Analytics
-          </a>
+          <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleOpenDatasetModal}
+              style={{ padding: '0.65rem 1.4rem' }}
+            >
+              Select From History
+            </button>
+            <a
+              href="/analytics"
+              className="btn"
+              style={{ background: 'var(--inner-box-bg)', color: 'var(--text-main)', border: '1px solid var(--border-color)', padding: '0.65rem 1.4rem', textDecoration: 'none' }}
+            >
+              Upload New File
+            </a>
+          </div>
         </div>
       ) : (
         <>
-          <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-            <div className="card stat-card">
-              <div className="stat-label">Total Purchases</div>
-              <div className="stat-value">{stats.total_transactions.toLocaleString()}</div>
-              <div className="stat-trend trend-up" style={{ fontSize: '0.85rem' }}>
-                <ArrowUpRight size={16} /> Live Count
+          {/* ── 2. Active Dataset Context Card ── */}
+          <div className="cobuy-active-dataset-card">
+            <div className="cobuy-active-dataset-info">
+              <div className="cobuy-active-dataset-icon">
+                <FileText size={22} />
+              </div>
+              <div>
+                <div className="cobuy-dataset-sub-label">Current Dataset</div>
+                <div className="cobuy-active-dataset-name-row">
+                  <span className="cobuy-active-dataset-name">
+                    {activeDatasetName || stats.dataset_name || `Dataset #${stats.dataset_id}`}
+                  </span>
+                  <span className="cobuy-active-pill">
+                    <span className="cobuy-active-dot" /> Active
+                  </span>
+                </div>
+                <div className="cobuy-active-dataset-meta">
+                  {stats.total_transactions.toLocaleString()} transactions • {stats.unique_items_count} products • {formattedActiveDate}
+                </div>
               </div>
             </div>
-            <div className="card stat-card">
-              <div className="stat-label">Different Items Sold</div>
-              <div className="stat-value">{stats.unique_items_count}</div>
-              <div className="stat-trend trend-up" style={{ fontSize: '0.85rem' }}>
-                <ArrowUpRight size={16} /> Items Tracked
+
+            <button
+              type="button"
+              className="cobuy-change-dataset-btn"
+              onClick={handleOpenDatasetModal}
+              title="Switch to another dataset from your history"
+            >
+              <RefreshCw size={13} />
+              <span>Change Dataset</span>
+            </button>
+          </div>
+
+          {/* ── 3. Four KPI Cards (Strictly Dynamic Values) ── */}
+          <div className="cobuy-kpi-grid">
+            {/* KPI 1: Total Transactions */}
+            <div className="cobuy-kpi-card">
+              <div className="cobuy-kpi-header">
+                <div className="cobuy-kpi-icon-box" style={{ background: '#eff2fe', color: '#6366f1' }}>
+                  <FileText size={18} />
+                </div>
+                <span className="cobuy-kpi-label">Total Transactions</span>
+              </div>
+              <div className="cobuy-kpi-value">
+                {stats.total_transactions.toLocaleString()}
+              </div>
+              <div className="cobuy-kpi-footer">
+                {transactionTrend.hasTrend ? (
+                  <span className={`cobuy-kpi-trend ${transactionTrend.isPositive ? 'positive' : 'negative'}`}>
+                    {transactionTrend.isPositive ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+                    {transactionTrend.text}
+                  </span>
+                ) : (
+                  <span className="cobuy-kpi-compare">Active records</span>
+                )}
               </div>
             </div>
-            <div className="card stat-card">
-              <div className="stat-label">Patterns Found</div>
-              <div className="stat-value">{rules.length}</div>
-              <div className="stat-trend trend-up" style={{ fontSize: '0.85rem' }}>
-                <ArrowUpRight size={16} /> Based on Your Data
+
+            {/* KPI 2: Units Sold */}
+            <div className="cobuy-kpi-card">
+              <div className="cobuy-kpi-header">
+                <div className="cobuy-kpi-icon-box" style={{ background: '#ecfdf5', color: '#10b981' }}>
+                  <Package size={18} />
+                </div>
+                <span className="cobuy-kpi-label">Units Sold</span>
+              </div>
+              <div className="cobuy-kpi-value">
+                {(stats.total_units_sold || stats.total_transactions).toLocaleString()}
+              </div>
+              <div className="cobuy-kpi-footer">
+                <span className="cobuy-kpi-compare">
+                  Avg: {(stats.total_units_sold / (stats.total_transactions || 1)).toFixed(1)} units/receipt
+                </span>
+              </div>
+            </div>
+
+            {/* KPI 3: Products Sold */}
+            <div className="cobuy-kpi-card">
+              <div className="cobuy-kpi-header">
+                <div className="cobuy-kpi-icon-box" style={{ background: '#f5f3ff', color: '#8b5cf6' }}>
+                  <LayoutGrid size={18} />
+                </div>
+                <span className="cobuy-kpi-label">Products Sold</span>
+              </div>
+              <div className="cobuy-kpi-value">
+                {stats.unique_items_count.toLocaleString()}
+              </div>
+              <div className="cobuy-kpi-footer">
+                <span className="cobuy-kpi-compare">Active products</span>
+              </div>
+            </div>
+
+            {/* KPI 4: Buying Patterns */}
+            <div className="cobuy-kpi-card">
+              <div className="cobuy-kpi-header">
+                <div className="cobuy-kpi-icon-box" style={{ background: '#f3e8ff', color: '#a855f7' }}>
+                  <Search size={18} />
+                </div>
+                <span className="cobuy-kpi-label">Buying Patterns</span>
+              </div>
+              <div className="cobuy-kpi-value">
+                {rules.length}
+              </div>
+              <div className="cobuy-kpi-footer">
+                <span className="cobuy-kpi-compare">
+                  {rules.length === 0 ? 'No strong patterns found' : `${rules.length} patterns discovered`}
+                </span>
               </div>
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
-            {/* Chart 1: Daily Transaction Volume Bar Pillars */}
-            <div className="card" id="dashboard-sales-chart">
-              <div style={{ marginBottom: '0.85rem' }}>
-                <h3 style={{ fontWeight: '700', fontSize: '1.15rem', color: 'var(--text-main)' }}>
-                  Daily Transaction Volume
-                </h3>
+          {/* ── 4. Middle Section: Transaction Activity & Key Insights ── */}
+          <div className="cobuy-dash-middle">
+            {/* Left Column: Composed Bar + Line Activity Chart */}
+            <div className="cobuy-chart-card">
+              <div className="cobuy-chart-header">
+                <div>
+                  <h3 className="cobuy-chart-title">
+                    <TrendingUp size={18} style={{ color: '#6366f1' }} />
+                    Transaction Activity
+                  </h3>
+                  {dateFilterPreset !== 'all' && (
+                    <div style={{ fontSize: '0.74rem', color: '#6366f1', fontWeight: '600', marginTop: '0.2rem' }}>
+                      Filtered: {filteredTotalTransactions.toLocaleString()} txs across {filteredTrends.length} day{filteredTrends.length > 1 ? 's' : ''}
+                    </div>
+                  )}
+                </div>
+
+                <div className="cobuy-date-filter-wrapper" ref={dateFilterRef}>
+                  <button
+                    type="button"
+                    className={`cobuy-chart-date-pill ${dateFilterPreset !== 'all' ? 'active-filter' : ''}`}
+                    onClick={() => setShowDateFilterDropdown(!showDateFilterDropdown)}
+                    title="Click to filter date range"
+                    id="cobuy-date-filter-btn"
+                  >
+                    <Calendar size={13} style={{ color: '#6366f1' }} />
+                    <span>{chartDateRange}</span>
+                    <ChevronDown
+                      size={13}
+                      style={{
+                        color: '#94a3b8',
+                        transform: showDateFilterDropdown ? 'rotate(180deg)' : 'none',
+                        transition: 'transform 0.2s ease'
+                      }}
+                    />
+                  </button>
+
+                  {/* Dropdown Popover */}
+                  {showDateFilterDropdown && (
+                    <div className="cobuy-date-dropdown">
+                      {/* Header */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-main)' }}>
+                          <SlidersHorizontal size={14} style={{ color: '#6366f1' }} />
+                          <span>Date Range Filter</span>
+                        </div>
+                        {dateFilterPreset !== 'all' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDateFilterPreset('all');
+                              setSelectedMonth('');
+                              setChartGranularity('daily');
+                              setShowDateFilterDropdown(false);
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#6366f1',
+                              fontSize: '0.74rem',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                              padding: 0
+                            }}
+                          >
+                            <RotateCcw size={11} /> Reset
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Quick Presets */}
+                      <div style={{ marginBottom: '1rem' }}>
+                        <div style={{ fontSize: '0.68rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.4rem' }}>
+                          Quick Presets
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                          {[
+                            { id: 'all', label: 'All Time' },
+                            { id: '7d', label: 'Last 7 Days' },
+                            { id: '14d', label: 'Last 14 Days' },
+                            { id: '30d', label: 'Last 30 Days' },
+                            { id: '90d', label: 'Last 90 Days' }
+                          ].map(preset => {
+                            const isSel = dateFilterPreset === preset.id;
+                            return (
+                              <button
+                                key={preset.id}
+                                type="button"
+                                onClick={() => {
+                                  setDateFilterPreset(preset.id);
+                                  setSelectedMonth('');
+                                  setShowDateFilterDropdown(false);
+                                }}
+                                style={{
+                                  padding: '0.35rem 0.65rem',
+                                  borderRadius: '6px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: isSel ? '700' : '500',
+                                  background: isSel ? 'rgba(99, 102, 241, 0.12)' : 'var(--inner-box-bg)',
+                                  color: isSel ? '#4f46e5' : 'var(--text-main)',
+                                  border: isSel ? '1px solid #6366f1' : '1px solid var(--border-color)',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease'
+                                }}
+                              >
+                                {preset.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Filter By Month (if multiple months exist) */}
+                      {availableMonths.length > 1 && (
+                        <div style={{ marginBottom: '1rem' }}>
+                          <div style={{ fontSize: '0.68rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.4rem' }}>
+                            Filter By Month ({availableMonths.length} Months)
+                          </div>
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(3, 1fr)',
+                            gap: '0.35rem',
+                            maxHeight: '130px',
+                            overflowY: 'auto',
+                            paddingRight: '2px'
+                          }}>
+                            {availableMonths.map(m => {
+                              const isSel = dateFilterPreset === 'month' && selectedMonth === m.key;
+                              return (
+                                <button
+                                  key={m.key}
+                                  type="button"
+                                  onClick={() => {
+                                    setDateFilterPreset('month');
+                                    setSelectedMonth(m.key);
+                                    setShowDateFilterDropdown(false);
+                                  }}
+                                  style={{
+                                    padding: '0.35rem 0.4rem',
+                                    borderRadius: '6px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: isSel ? '700' : '500',
+                                    background: isSel ? 'rgba(99, 102, 241, 0.12)' : 'var(--inner-box-bg)',
+                                    color: isSel ? '#4f46e5' : 'var(--text-main)',
+                                    border: isSel ? '1px solid #6366f1' : '1px solid var(--border-color)',
+                                    cursor: 'pointer',
+                                    textAlign: 'center',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis'
+                                  }}
+                                  title={`${m.label} (${m.count.toLocaleString()} txs)`}
+                                >
+                                  {m.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Custom Range */}
+                      <div style={{ marginBottom: '1rem' }}>
+                        <div style={{ fontSize: '0.68rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.4rem' }}>
+                          Custom Date Range
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>From</label>
+                            <input
+                              type="date"
+                              value={customStartDate}
+                              min={datasetDateBounds.minDate}
+                              max={customEndDate || datasetDateBounds.maxDate}
+                              onChange={(e) => setCustomStartDate(e.target.value)}
+                              style={{
+                                width: '100%',
+                                padding: '0.35rem 0.45rem',
+                                borderRadius: '6px',
+                                border: '1px solid var(--border-color)',
+                                background: 'var(--inner-box-bg)',
+                                color: 'var(--text-main)',
+                                fontSize: '0.74rem'
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>To</label>
+                            <input
+                              type="date"
+                              value={customEndDate}
+                              min={customStartDate || datasetDateBounds.minDate}
+                              max={datasetDateBounds.maxDate}
+                              onChange={(e) => setCustomEndDate(e.target.value)}
+                              style={{
+                                width: '100%',
+                                padding: '0.35rem 0.45rem',
+                                borderRadius: '6px',
+                                border: '1px solid var(--border-color)',
+                                background: 'var(--inner-box-bg)',
+                                color: 'var(--text-main)',
+                                fontSize: '0.74rem'
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (customStartDate && customEndDate) {
+                              setDateFilterPreset('custom');
+                              setSelectedMonth('');
+                              setShowDateFilterDropdown(false);
+                            }
+                          }}
+                          className="btn btn-primary"
+                          style={{
+                            width: '100%',
+                            padding: '0.38rem',
+                            fontSize: '0.75rem',
+                            fontWeight: '600'
+                          }}
+                        >
+                          Apply Custom Range
+                        </button>
+                      </div>
+
+                      {/* Granularity View */}
+                      <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ fontSize: '0.74rem', fontWeight: '600', color: 'var(--text-muted)' }}>
+                          Granularity:
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.3rem', background: 'var(--inner-box-bg)', padding: '2px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                          {['daily', 'weekly', 'monthly'].map(g => (
+                            <button
+                              key={g}
+                              type="button"
+                              onClick={() => setChartGranularity(g)}
+                              style={{
+                                padding: '0.25rem 0.55rem',
+                                borderRadius: '4px',
+                                fontSize: '0.72rem',
+                                fontWeight: chartGranularity === g ? '700' : '500',
+                                background: chartGranularity === g ? '#6366f1' : 'transparent',
+                                color: chartGranularity === g ? '#ffffff' : 'var(--text-muted)',
+                                border: 'none',
+                                cursor: 'pointer',
+                                textTransform: 'capitalize'
+                              }}
+                            >
+                              {g}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Close / Done Button */}
+                      <div style={{ marginTop: '0.85rem', paddingTop: '0.65rem', borderTop: '1px solid var(--border-color)', textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          onClick={() => setShowDateFilterDropdown(false)}
+                          style={{
+                            padding: '0.35rem 0.85rem',
+                            background: '#6366f1',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '6px',
+                            fontSize: '0.76rem',
+                            fontWeight: '600',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Done
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div style={{ height: '300px' }}>
-                {filteredTrends.length === 0 ? (
+              <div style={{ width: '100%', height: 290 }}>
+                {chartData.length === 0 ? (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                    No daily trends available in this time range.
+                    No chronological transaction dates found in this dataset.
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={filteredTrends} margin={{ top: 15, right: 20, left: 15, bottom: 25 }}>
-                      <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="var(--border-color)" strokeOpacity={0.6} />
+                    <ComposedChart data={chartData} margin={{ top: 25, right: 25, left: 65, bottom: 25 }}>
+                      <defs>
+                        <linearGradient id="cobuyBarGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#818cf8" stopOpacity={0.7} />
+                          <stop offset="100%" stopColor="#c7d2fe" stopOpacity={0.35} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" strokeOpacity={0.8} />
                       <XAxis
-                        dataKey="date"
-                        axisLine={{ stroke: 'var(--border-color)', strokeWidth: 1.5 }}
+                        dataKey="displayDate"
+                        axisLine={{ stroke: '#cbd5e1' }}
                         tickLine={false}
-                        tick={{ fill: 'var(--text-muted)', fontSize: 11, fontFamily: 'var(--font-mono)' }}
-                        padding={{ left: 15, right: 15 }}
-                        tickFormatter={(str) => {
-                          if (!str || typeof str !== 'string') return str;
-                          const parts = str.split('-');
-                          if (parts.length !== 3) return str;
-                          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                          const monthIdx = parseInt(parts[1], 10) - 1;
-                          const month = months[monthIdx] || parts[1];
-                          const day = parts[2];
-                          return `${month} ${day}`;
-                        }}
+                        tick={{ fill: '#64748b', fontSize: 11, fontWeight: 500 }}
+                        interval={xAxisInterval}
                         label={{
-                          value: 'Transaction Date',
+                          value: chartGranularity === 'monthly' ? 'Month' : chartGranularity === 'weekly' ? 'Week' : 'Transaction Date',
                           position: 'insideBottom',
-                          offset: -18,
-                          style: { fill: 'var(--text-main)', fontSize: 12, fontWeight: 700 }
+                          offset: -16,
+                          style: { fill: '#0f172a', fontSize: 12, fontWeight: 700 }
                         }}
                       />
                       <YAxis
-                        axisLine={{ stroke: 'var(--border-color)', strokeWidth: 1.5 }}
+                        axisLine={false}
                         tickLine={false}
-                        tick={{ fill: 'var(--text-muted)', fontSize: 11, fontFamily: 'var(--font-mono)' }}
+                        tick={{ fill: '#64748b', fontSize: 11 }}
+                        tickFormatter={(v) => v.toLocaleString()}
                         label={{
-                          value: 'Number of Receipts',
+                          value: 'Number of Transactions',
                           angle: -90,
                           position: 'insideLeft',
-                          offset: 10,
-                          dy: 60,
-                          style: { fill: 'var(--text-main)', fontSize: 12, fontWeight: 700, textAnchor: 'middle' }
+                          offset: -12,
+                          dy: 70,
+                          style: { fill: '#0f172a', fontSize: 12, fontWeight: 700, textAnchor: 'middle' }
                         }}
                       />
-                      <Tooltip content={<CustomBarTooltip />} cursor={{ fill: 'var(--inner-box-bg)', opacity: 0.5 }} />
-                      <Bar dataKey="count" name="Receipts" radius={[6, 6, 0, 0]} maxBarSize={45} animationDuration={450} isAnimationActive={true}>
-                        {filteredTrends.map((entry, index) => {
-                          const isPeak = entry.count === maxCount && maxCount > 0;
-                          return (
-                            <Cell
-                              key={`bar-${index}`}
-                              fill={isPeak ? 'var(--accent-color)' : 'var(--primary-color)'}
-                              style={{
-                                transition: 'all 0.3s ease'
-                              }}
-                            />
-                          );
-                        })}
+                      <Tooltip content={<CustomChartTooltip />} cursor={{ fill: 'rgba(99, 102, 241, 0.04)' }} />
+                      <Bar
+                        dataKey="count"
+                        fill="url(#cobuyBarGrad)"
+                        radius={[4, 4, 0, 0]}
+                        barSize={chartData.length === 1 ? 48 : chartData.length <= 7 ? 36 : chartData.length <= 14 ? 22 : chartData.length <= 25 ? 14 : chartData.length <= 40 ? 8 : undefined}
+                      >
+                        {chartData.length <= 25 && (
+                          <LabelList
+                            dataKey="count"
+                            position="top"
+                            formatter={(val) => val.toLocaleString()}
+                            style={{ fill: '#334155', fontSize: '11px', fontWeight: 600 }}
+                            dy={-4}
+                          />
+                        )}
                       </Bar>
-                    </BarChart>
+                      {chartData.length > 1 && (
+                        <Line
+                          type="monotone"
+                          dataKey="count"
+                          stroke="#6366f1"
+                          strokeWidth={2.5}
+                          dot={chartData.length <= 31 ? { r: 3, fill: '#ffffff', stroke: '#6366f1', strokeWidth: 1.5 } : false}
+                          activeDot={{ r: 6, fill: '#4f46e5', stroke: '#ffffff', strokeWidth: 2 }}
+                        />
+                      )}
+                    </ComposedChart>
                   </ResponsiveContainer>
                 )}
               </div>
-
-              {filteredTrends.length > 0 && (
-                <div style={{
-                  marginTop: '1rem',
-                  padding: '0.875rem 1.1rem',
-                  background: 'var(--inner-box-bg)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '8px',
-                  fontSize: '0.83rem',
-                  color: 'var(--text-muted)',
-                  lineHeight: 1.5
-                }}>
-                  <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '0.25rem' }}>
-                    💡 What this graph means for your store:
-                  </strong>
-                  Daily transaction volume ranges between <strong>{Math.min(...filteredTrends.map(t => t.count))}</strong> and <strong>{maxCount} receipts</strong> per day. The peak recorded volume occurred on <strong>{peakDay?.date}</strong> with <strong>{peakDay?.count} receipts</strong> (busiest day). Use these insights to optimize staff scheduling and inventory stocking for high-demand days.
-                </div>
-              )}
             </div>
 
-            {/* Chart 2: Option 2 Horizontal Leaderboard Progress Grid */}
-            <div className="card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-                <h3 style={{ fontWeight: '700', fontSize: '1.15rem', color: 'var(--text-main)' }}>What People Buy Most</h3>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', background: 'var(--inner-box-bg)', padding: '0.25rem 0.65rem', borderRadius: '100px', border: '1px solid var(--border-color)' }}>
-                  🏆 {totalItemCount.toLocaleString()} Total Units
-                </span>
+            {/* Right Column: Key Insights */}
+            <div className="cobuy-insights-card">
+              <div className="cobuy-insights-header">
+                <Lightbulb size={18} style={{ color: '#6366f1' }} />
+                <h3 className="cobuy-insights-title">Key Insights</h3>
               </div>
 
-              {pieData.length === 0 ? (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '300px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  No products sold yet.
+              <div className="cobuy-insights-list">
+                {/* Insight 1: Highest Selling Product */}
+                <div className="cobuy-insight-item">
+                  <div className="cobuy-insight-icon-circle" style={{ background: '#ecfdf5', color: '#10b981' }}>
+                    <Star size={16} />
+                  </div>
+                  <div className="cobuy-insight-content">
+                    <div className="cobuy-insight-text">
+                      {topProduct ? `${topProduct.name} is your best-selling product.` : 'Catalogue volume tracking active.'}
+                    </div>
+                    <div className="cobuy-insight-subtext">
+                      {topProduct
+                        ? `${topProduct.name} recorded ${topProduct.value.toLocaleString()} sales, making up approximately ${topProduct.quantity_share || Math.round((topProduct.value / (stats.total_units_sold || 1)) * 100)}% of total units sold.`
+                        : 'No single product lead established in transaction records.'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Insight 2: Sales Concentration */}
+                <div className="cobuy-insight-item">
+                  <div className="cobuy-insight-icon-circle" style={{ background: '#eff6ff', color: '#3b82f6' }}>
+                    <TrendingUp size={16} />
+                  </div>
+                  <div className="cobuy-insight-content">
+                    <div className="cobuy-insight-text">
+                      Sales are concentrated around your top products.
+                    </div>
+                    <div className="cobuy-insight-subtext">
+                      {salesConcentration
+                        ? `Your five highest-selling products account for a significant portion of total unit sales.`
+                        : `Customer volume spans ${stats.unique_items_count} distinct items.`}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Insight 3: Purchasing Patterns Status */}
+                <div className="cobuy-insight-item">
+                  <div className="cobuy-insight-icon-circle" style={{ background: '#f5f3ff', color: '#8b5cf6' }}>
+                    <Info size={16} />
+                  </div>
+                  <div className="cobuy-insight-content">
+                    <div className="cobuy-insight-text">
+                      {rules.length > 0
+                        ? 'Strong purchasing patterns detected.'
+                        : 'Limited purchasing patterns detected.'}
+                    </div>
+                    <div className="cobuy-insight-subtext">
+                      {rules.length > 0
+                        ? `${rules.length} association rules discovered for product placement & bundles.`
+                        : 'The current dataset does not contain enough repeated product combinations to identify strong cross-selling patterns.'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── 5. Bottom Section: Dataset Health ── */}
+          <div className="cobuy-health-card">
+            <div className="cobuy-health-header">
+              <div className="cobuy-health-header-left">
+                <ShieldCheck size={20} style={{ color: '#6366f1' }} />
+                <div>
+                  <h3 className="cobuy-health-title">Dataset Health</h3>
+                  <p className="cobuy-health-subtitle">
+                    Your data is complete and ready for analysis.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="cobuy-health-view-btn"
+                onClick={() => setShowHealthModal(true)}
+              >
+                <span>View details</span>
+                <ArrowRight size={14} />
+              </button>
+            </div>
+
+            <div className="cobuy-health-body">
+              {/* 5 Readiness Indicators */}
+              <div className="cobuy-health-indicators">
+                <div className="cobuy-health-indicator-card">
+                  <CheckCircle2 size={16} style={{ color: '#10b981', flexShrink: 0 }} />
+                  <div className="cobuy-health-ind-text">
+                    <span className="cobuy-health-ind-num">{stats.total_transactions.toLocaleString()}</span>
+                    <span className="cobuy-health-ind-label">Transactions</span>
+                  </div>
+                </div>
+
+                <div className="cobuy-health-indicator-card">
+                  <CheckCircle2 size={16} style={{ color: '#10b981', flexShrink: 0 }} />
+                  <div className="cobuy-health-ind-text">
+                    <span className="cobuy-health-ind-num">{stats.unique_items_count}</span>
+                    <span className="cobuy-health-ind-label">Products</span>
+                  </div>
+                </div>
+
+                <div className="cobuy-health-indicator-card">
+                  <CheckCircle2 size={16} style={{ color: '#10b981', flexShrink: 0 }} />
+                  <div className="cobuy-health-ind-text">
+                    <span className="cobuy-health-ind-num">
+                      {stats.health?.distinct_dates_count || (trends.length > 1 ? trends.length : 1)}
+                    </span>
+                    <span className="cobuy-health-ind-label">
+                      Transaction date{(stats.health?.distinct_dates_count || (trends.length > 1 ? trends.length : 1)) === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="cobuy-health-indicator-card">
+                  <CheckCircle2 size={16} style={{ color: '#10b981', flexShrink: 0 }} />
+                  <div className="cobuy-health-ind-text">
+                    <span className="cobuy-health-ind-num">{stats.health?.missing_names_count || 0}</span>
+                    <span className="cobuy-health-ind-label">Missing product names</span>
+                  </div>
+                </div>
+
+                <div className="cobuy-health-indicator-card">
+                  <CheckCircle2 size={16} style={{ color: '#10b981', flexShrink: 0 }} />
+                  <div className="cobuy-health-ind-text">
+                    <span className="cobuy-health-ind-num">{stats.health?.duplicates_removed || 0}</span>
+                    <span className="cobuy-health-ind-label">Invalid records</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Box */}
+              <div className={`cobuy-health-status-box ${stats.health?.status === 'needs_attention' ? 'warning' : ''}`}>
+                <CheckCircle2 size={28} style={{ color: '#10b981', flexShrink: 0 }} />
+                <div>
+                  <div className="cobuy-health-status-text-bold">
+                    {stats.health?.status === 'needs_attention' ? 'Needs Attention' : 'Dataset looks good!'}
+                  </div>
+                  <div className="cobuy-health-status-text-muted">
+                    {stats.health?.message || 'Your data is complete and ready for analysis.'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Modal: Change Dataset ── */}
+      {showDatasetModal && (
+        <div className="cobuy-modal-overlay" onClick={() => setShowDatasetModal(false)}>
+          <div className="cobuy-modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="cobuy-modal-header">
+              <h3 className="cobuy-modal-title">Select Active Dataset</h3>
+              <button
+                type="button"
+                className="cobuy-modal-close-btn"
+                onClick={() => setShowDatasetModal(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="cobuy-modal-body">
+              {loadingDatasets ? (
+                <div style={{ textAlign: 'center', padding: '2rem' }}>
+                  <RefreshCw size={24} className="spin" style={{ color: 'var(--primary-color)', margin: '0 auto 0.5rem' }} />
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Loading your datasets...</p>
+                </div>
+              ) : availableDatasets.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+                  No historical datasets found in your account.
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem', maxHeight: '315px', overflowY: 'auto', paddingRight: '0.5rem' }}>
-                  {pieData.map((item, index) => {
-                    const percentage = totalItemCount > 0 ? Math.round((item.value / totalItemCount) * 100) : 0;
-                    const barWidth = `${Math.min(100, Math.max(8, Math.round((item.value / maxPieValue) * 100)))}%`;
-                    const barOpacity = Math.max(0.4, 1 - index * 0.15);
-
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {availableDatasets.map((ds) => {
+                    const isActive = String(ds.id) === String(activeDatasetId);
                     return (
-                      <div key={item.name} style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                            <span style={{
-                              width: '24px',
-                              height: '24px',
-                              borderRadius: '6px',
-                              background: index === 0 ? 'rgba(59, 130, 246, 0.15)' : 'var(--inner-box-bg)',
-                              border: '1px solid var(--border-color)',
-                              color: index === 0 ? 'var(--primary-color)' : 'var(--text-muted)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontSize: '0.75rem',
-                              fontWeight: '700',
-                              fontFamily: 'var(--font-mono)'
-                            }}>
-                              #{index + 1}
-                            </span>
-                            <span style={{ fontWeight: '600', fontSize: '0.9rem', color: 'var(--text-main)' }}>
-                              {item.name}
-                            </span>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                            <span style={{ fontSize: '0.85rem', color: 'var(--text-main)', fontWeight: '600', fontFamily: 'var(--font-mono)' }}>
-                              {item.value.toLocaleString()} sales
-                            </span>
-                            <span style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', minWidth: '38px', textAlign: 'right' }}>
-                              {percentage}%
-                            </span>
+                      <div
+                        key={ds.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '0.85rem 1rem',
+                          borderRadius: '10px',
+                          border: isActive ? '1.5px solid #6366f1' : '1px solid var(--border-color)',
+                          background: isActive ? 'rgba(99, 102, 241, 0.05)' : 'var(--inner-box-bg)',
+                          transition: 'all 0.2s ease'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                          <FileText size={20} style={{ color: isActive ? '#6366f1' : 'var(--text-muted)' }} />
+                          <div>
+                            <div style={{ fontWeight: '700', fontSize: '0.88rem', color: 'var(--text-main)' }}>
+                              {ds.name}
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                              {(ds.transaction_count || 0).toLocaleString()} transactions • {ds.unique_items || 0} products
+                            </div>
                           </div>
                         </div>
 
-                        {/* Cohesive Monochromatic Progress Track */}
-                        <div style={{ width: '100%', height: '8px', background: 'var(--inner-box-bg)', borderRadius: '100px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
-                          <div style={{
-                            width: barWidth,
-                            height: '100%',
-                            background: 'var(--primary-color)',
-                            opacity: barOpacity,
-                            borderRadius: '100px',
-                            transition: 'width 0.8s cubic-bezier(0.16, 1, 0.3, 1)'
-                          }} />
+                        <div>
+                          {isActive ? (
+                            <span style={{ fontSize: '0.78rem', fontWeight: '700', color: '#6366f1', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                              <CheckCircle2 size={14} /> Active
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleSelectDataset(ds)}
+                              className="btn btn-primary"
+                              style={{ padding: '0.35rem 0.85rem', fontSize: '0.78rem' }}
+                            >
+                              Activate
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -886,388 +1434,103 @@ const Dashboard = () => {
               )}
             </div>
           </div>
-
-          {/* Strongest Buying Patterns Table */}
-          <div className="card">
-            <h3 style={{ fontWeight: '600', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Zap size={18} style={{ color: 'var(--primary-color)' }} /> Strongest Buying Patterns
-              </div>
-              <button
-                onClick={() => setShowPatternsModal(true)}
-                style={{
-                  background: 'var(--inner-box-bg)',
-                  border: '1px solid var(--border-color)',
-                  color: 'var(--text-muted)',
-                  borderRadius: '50%',
-                  width: '28px',
-                  height: '28px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  padding: 0
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = 'var(--primary-color)';
-                  e.currentTarget.style.borderColor = 'var(--primary-color)';
-                  e.currentTarget.style.transform = 'scale(1.1)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = 'var(--text-muted)';
-                  e.currentTarget.style.borderColor = 'var(--border-color)';
-                  e.currentTarget.style.transform = 'scale(1)';
-                }}
-                title="Click to see how buying patterns and calculations work"
-              >
-                <HelpCircle size={17} />
-              </button>
-            </h3>
-            <div className="table-container">
-              {sortedRules.length === 0 ? (
-                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                  No strong buying patterns discovered even after relaxing thresholds to the minimum floor (0.01% support, 2% confidence).
-                </div>
-              ) : (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>If They Buy…</th>
-                      <th>…They Also Buy</th>
-                      <th>How Common This Is</th>
-                      <th>How Likely</th>
-                      <th>How Strong the Link Is</th>
-                      <th style={{ textAlign: 'right' }}>Details</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedRules.map((rule, idx) => {
-                      const isEven = idx % 2 === 0;
-                      const isExpanded = expandedRow === idx;
-                      const totalTx = stats.total_transactions || 229;
-                      const bothCount = rule.rule_tx_count || Math.max(1, Math.round(rule.support * totalTx));
-                      const antCount = rule.ant_tx_count || Math.max(bothCount, Math.round(bothCount / (rule.confidence || 1)));
-                      const consRate = rule.consequent_baseline_rate || (rule.lift ? (rule.confidence / rule.lift) : 0.2);
-                      const consCount = Math.max(1, Math.round(consRate * totalTx));
-                      const antText = rule.antecedents.join(', ');
-                      const consText = rule.consequents.join(', ');
-                      const allItemsText = [...rule.antecedents, ...rule.consequents].join(', ');
-
-                      return (
-                        <React.Fragment key={idx}>
-                          <tr
-                            style={{
-                              background: isEven ? 'var(--table-bg)' : 'transparent',
-                              borderBottom: isExpanded ? 'none' : '1px solid var(--border-color)',
-                              transition: 'background 0.15s ease'
-                            }}
-                            onMouseEnter={e => { e.currentTarget.style.background = 'var(--inner-box-bg)'; }}
-                            onMouseLeave={e => { e.currentTarget.style.background = isEven ? 'var(--table-bg)' : 'transparent'; }}
-                          >
-                            <td style={{ fontWeight: '600', color: '#fff' }}>{antText}</td>
-                            <td style={{ fontWeight: '600', color: 'var(--primary-color)' }}>{consText}</td>
-                            <td className="mono">{(rule.support * 100).toFixed(1)}%</td>
-                            <td className="mono" style={{ color: rule.confidence >= 0.7 ? '#10b981' : '#f59e0b', fontWeight: '700' }}>{(rule.confidence * 100).toFixed(1)}%</td>
-                            <td className="mono" style={{ fontWeight: '600' }}>{rule.lift.toFixed(2)}x</td>
-                            <td style={{ textAlign: 'right' }}>
-                              <button
-                                onClick={() => toggleRow(idx)}
-                                style={{
-                                  background: isExpanded ? 'rgba(99, 102, 241, 0.18)' : 'var(--inner-box-bg)',
-                                  border: `1px solid ${isExpanded ? 'var(--primary-color)' : 'var(--border-color)'}`,
-                                  color: isExpanded ? 'var(--primary-color)' : 'var(--text-main)',
-                                  borderRadius: '6px',
-                                  padding: '0.35rem 0.75rem',
-                                  fontSize: '0.75rem',
-                                  fontWeight: '600',
-                                  cursor: 'pointer',
-                                  transition: 'all 0.15s ease',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '0.35rem'
-                                }}
-                              >
-                                {isExpanded ? 'Hide' : 'View'}
-                                {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                              </button>
-                            </td>
-                          </tr>
-                          <AnimatePresence>
-                            {isExpanded && (
-                              <tr key={`exp-${idx}`} style={{ background: isEven ? 'var(--table-bg)' : 'transparent', borderBottom: '1px solid var(--border-color)' }}>
-                                <td colSpan={6} style={{ padding: 0 }}>
-                                  <motion.div
-                                    initial={{ opacity: 0, height: 0 }}
-                                    animate={{ opacity: 1, height: 'auto' }}
-                                    exit={{ opacity: 0, height: 0 }}
-                                    transition={{ duration: 0.3, ease: 'easeInOut' }}
-                                    style={{ overflow: 'hidden', padding: '0 1.25rem 1rem' }}
-                                  >
-                                    <div style={{
-                                      background: 'var(--table-header-bg)',
-                                      border: '1px solid var(--border-color)',
-                                      borderRadius: '10px',
-                                      padding: '1.15rem 1.4rem',
-                                      marginTop: '0.4rem',
-                                      fontSize: '0.82rem',
-                                      color: 'var(--text-main)',
-                                      lineHeight: 1.7
-                                    }}>
-                                      {/* Header badge */}
-                                      <div style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        marginBottom: '0.85rem',
-                                        paddingBottom: '0.65rem',
-                                        borderBottom: '1px solid var(--border-color)',
-                                        flexWrap: 'wrap',
-                                        gap: '0.5rem'
-                                      }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: '700', fontSize: '0.88rem' }}>
-                                          <span style={{ color: 'var(--primary-color)' }}>📊 System Calculation Proof</span>
-                                          <span style={{ fontSize: '0.75rem', fontWeight: '500', color: 'var(--text-muted)' }}>
-                                            (How this buying pattern was computed from your uploaded store data)
-                                          </span>
-                                        </div>
-                                        <span style={{
-                                          fontSize: '0.72rem',
-                                          fontWeight: '700',
-                                          color: '#10b981',
-                                          background: 'rgba(16, 185, 129, 0.12)',
-                                          padding: '0.2rem 0.55rem',
-                                          borderRadius: '4px',
-                                          border: '1px solid rgba(16, 185, 129, 0.25)'
-                                        }}>
-                                          Verified Data Proof
-                                        </span>
-                                      </div>
-
-                                      {/* 3 Step Proof Cards */}
-                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.85rem' }}>
-                                        
-                                        {/* Card 1: Common Frequency */}
-                                        <div style={{ background: 'var(--inner-box-bg)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.9rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                                          <div>
-                                            <div style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>
-                                              1. How Common This Is
-                                            </div>
-                                            <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#3b82f6', marginBottom: '0.2rem' }}>
-                                              {(rule.support * 100).toFixed(1)}%
-                                            </div>
-                                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: '1.4', marginBottom: '0.65rem' }}>
-                                              Appeared in <strong>{bothCount}</strong> out of <strong>{totalTx.toLocaleString()}</strong> total receipts in your uploaded file.
-                                            </div>
-                                          </div>
-                                          <div style={{ fontSize: '0.76rem', color: 'var(--text-main)', fontFamily: 'var(--font-mono)', background: 'var(--table-header-bg)', padding: '0.45rem 0.65rem', borderRadius: '5px', border: '1px solid var(--border-color)', lineHeight: '1.5' }}>
-                                            <strong>{bothCount}</strong> (receipts with {allItemsText}) &divide; <strong>{totalTx.toLocaleString()}</strong> (total store receipts) = <strong>{(rule.support * 100).toFixed(1)}%</strong>
-                                          </div>
-                                        </div>
-
-                                        {/* Card 2: Likelihood / Habit */}
-                                        <div style={{ background: 'var(--inner-box-bg)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.9rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                                          <div>
-                                            <div style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>
-                                              2. How Likely They Buy Together
-                                            </div>
-                                            <div style={{ fontSize: '1.25rem', fontWeight: '800', color: rule.confidence >= 0.7 ? '#10b981' : '#f59e0b', marginBottom: '0.2rem' }}>
-                                              {(rule.confidence * 100).toFixed(1)}%
-                                            </div>
-                                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: '1.4', marginBottom: '0.65rem' }}>
-                                              When customers bought <strong>{antText}</strong>, <strong>{(rule.confidence * 100).toFixed(1)}%</strong> of them also grabbed <strong>{consText}</strong>.
-                                            </div>
-                                          </div>
-                                          <div style={{ fontSize: '0.76rem', color: 'var(--text-main)', fontFamily: 'var(--font-mono)', background: 'var(--table-header-bg)', padding: '0.45rem 0.65rem', borderRadius: '5px', border: '1px solid var(--border-color)', lineHeight: '1.5' }}>
-                                            <strong>{bothCount}</strong> (bought {allItemsText}) &divide; <strong>{antCount}</strong> (bought {antText}) = <strong>{(rule.confidence * 100).toFixed(1)}%</strong>
-                                          </div>
-                                        </div>
-
-                                        {/* Card 3: Connection Strength */}
-                                        <div style={{ background: 'var(--inner-box-bg)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.9rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                                          <div>
-                                            <div style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>
-                                              3. Connection Strength
-                                            </div>
-                                            <div style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--primary-color)', marginBottom: '0.2rem' }}>
-                                              {rule.lift.toFixed(2)}x
-                                            </div>
-                                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: '1.4', marginBottom: '0.65rem' }}>
-                                              Buying these together is <strong>{rule.lift.toFixed(2)} times more likely</strong> than an average random customer purchase.
-                                            </div>
-                                          </div>
-                                          <div style={{ fontSize: '0.76rem', color: 'var(--text-main)', fontFamily: 'var(--font-mono)', background: 'var(--table-header-bg)', padding: '0.45rem 0.65rem', borderRadius: '5px', border: '1px solid var(--border-color)', lineHeight: '1.5' }}>
-                                            <strong>{(rule.confidence * 100).toFixed(1)}%</strong> (buyer rate) &divide; [<strong>{consCount}</strong> ({consText} receipts) &divide; <strong>{totalTx.toLocaleString()}</strong> (total receipts)] = <strong>{rule.lift.toFixed(2)}x boost</strong>
-                                          </div>
-                                        </div>
-
-                                      </div>
-                                    </div>
-                                  </motion.div>
-                                </td>
-                              </tr>
-                            )}
-                          </AnimatePresence>
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        </>
+        </div>
       )}
 
-      {/* Association Rules / Strongest Buying Patterns Explainer Modal */}
-      {showPatternsModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.75)',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999,
-          padding: '1.5rem'
-        }}
-        onClick={(e) => {
-          if (e.target === e.currentTarget) setShowPatternsModal(false);
-        }}>
-          <div className="card fade-in" style={{
-            maxWidth: '780px',
-            width: '100%',
-            maxHeight: '90vh',
-            overflowY: 'auto',
-            background: 'var(--card-bg)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '20px',
-            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-            padding: '2.2rem',
-            position: 'relative'
-          }}>
-            {/* Modal Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.75rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1.25rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-                <div style={{ width: 44, height: 44, borderRadius: '12px', background: 'var(--sidebar-active-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary-color)' }}>
-                  <HelpCircle size={24} />
-                </div>
-                <div>
-                  <h2 style={{ fontSize: '1.45rem', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
-                    Strongest Buying Patterns & Calculations
-                  </h2>
-                  <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', margin: '0.2rem 0 0' }}>
-                    Executive breakdown of retail cross-selling algorithms (`Apriori / FP-Growth`)
-                  </p>
-                </div>
+      {/* ── Modal: Dataset Health Details ── */}
+      {showHealthModal && (
+        <div className="cobuy-modal-overlay" onClick={() => setShowHealthModal(false)}>
+          <div className="cobuy-modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="cobuy-modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <ShieldCheck size={20} style={{ color: '#10b981' }} />
+                <h3 className="cobuy-modal-title">Dataset Validation & Quality</h3>
               </div>
               <button
-                onClick={() => setShowPatternsModal(false)}
-                style={{
-                  background: 'var(--inner-box-bg)',
-                  border: '1px solid var(--border-color)',
-                  color: 'var(--text-muted)',
-                  width: 36,
-                  height: 36,
-                  borderRadius: '10px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer'
-                }}
+                type="button"
+                className="cobuy-modal-close-btn"
+                onClick={() => setShowHealthModal(false)}
               >
                 <X size={18} />
               </button>
             </div>
 
-            {/* What is this section */}
-            <div style={{
-              background: 'var(--sidebar-active-bg)',
-              border: '1px solid rgba(99, 102, 241, 0.2)',
-              borderRadius: '14px',
-              padding: '1.25rem 1.5rem',
-              marginBottom: '1.75rem'
-            }}>
-              <h4 style={{ fontSize: '1.05rem', fontWeight: '700', color: 'var(--primary-color)', margin: '0 0 0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <BookOpen size={18} /> What Does "Strongest Buying Patterns" Mean?
-              </h4>
-              <p style={{ fontSize: '0.95rem', color: 'var(--text-main)', lineHeight: '1.6', margin: 0 }}>
-                This table reveals the most powerful <strong>co-purchasing behaviors</strong> discovered in your store's transaction history. Instead of just looking at top-selling items individually, it answers the question: <span style={{ color: 'var(--primary-color)', fontWeight: '600' }}>"When a shopper puts Item X in their cart, what else do they automatically grab before checkout?"</span> These rules empower retail managers to build targeted bundles, optimize shelf placement, and increase Average Order Value (AOV).
-              </p>
-            </div>
-
-            {/* How the Calculations Work */}
-            <h3 style={{ fontSize: '1.15rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Zap size={18} style={{ color: 'var(--accent-color)' }} /> How the 3 Key Calculations Work
-            </h3>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', marginBottom: '1.75rem' }}>
-              {/* Step 1: Support */}
-              <div style={{ background: 'var(--inner-box-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1.2rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <span style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-main)' }}>1. How Common This Is (`Support`)</span>
-                  <span className="mono" style={{ fontSize: '0.8rem', background: 'var(--badge-bg)', padding: '0.2rem 0.6rem', borderRadius: '100px', color: 'var(--text-muted)' }}>Baseline Volume</span>
-                </div>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: '0 0 0.6rem' }}>
-                  Measures the <strong>percentage of all customer receipts</strong> that contain both items (`If They Buy...` and `...They Also Buy`) together in the same basket.
-                </p>
-                <div style={{ background: 'rgba(0, 0, 0, 0.2)', padding: '0.6rem 0.9rem', borderRadius: '8px', fontSize: '0.85rem', fontFamily: 'var(--font-mono)', color: 'var(--primary-color)' }}>
-                  Support = (Transactions with Both Items) ÷ (Total Store Transactions)
-                </div>
-              </div>
-
-              {/* Step 2: Confidence */}
-              <div style={{ background: 'var(--inner-box-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1.2rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <span style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-main)' }}>2. How Likely (`Confidence`)</span>
-                  <span className="mono" style={{ fontSize: '0.8rem', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '0.2rem 0.6rem', borderRadius: '100px' }}>Probability %</span>
-                </div>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: '0 0 0.6rem' }}>
-                  Measures the <strong>reliability of the rule</strong>. When a customer has already selected the first item, what is the exact probability % that they also purchase the second item?
-                </p>
-                <div style={{ background: 'rgba(0, 0, 0, 0.2)', padding: '0.6rem 0.9rem', borderRadius: '8px', fontSize: '0.85rem', fontFamily: 'var(--font-mono)', color: '#10b981' }}>
-                  Confidence = (Transactions with Both Items) ÷ (Transactions with First Item Only)
-                </div>
-              </div>
-
-              {/* Step 3: Lift */}
-              <div style={{ background: 'var(--inner-box-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1.2rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <span style={{ fontWeight: '700', fontSize: '1rem', color: 'var(--text-main)' }}>3. How Strong the Link Is (`Lift`)</span>
-                  <span className="mono" style={{ fontSize: '0.8rem', background: 'rgba(124, 58, 237, 0.15)', color: 'var(--accent-color)', padding: '0.2rem 0.6rem', borderRadius: '100px' }}>Multiplier (x)</span>
-                </div>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.5', margin: '0 0 0.6rem' }}>
-                  Measures how much <strong>stronger the connection is</strong> compared to buying the second item purely by chance (`1.00x`).
-                </p>
-                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', fontSize: '0.85rem', marginTop: '0.5rem' }}>
-                  <div style={{ background: 'rgba(0, 0, 0, 0.2)', padding: '0.5rem 0.8rem', borderRadius: '6px', color: 'var(--primary-color)' }}>
-                    <strong>&gt; 1.00x:</strong> Strong Positive Link (`e.g., 2.50x = 2.5x more likely to buy together`)
-                  </div>
-                  <div style={{ background: 'rgba(0, 0, 0, 0.2)', padding: '0.5rem 0.8rem', borderRadius: '6px', color: 'var(--text-muted)' }}>
-                    <strong>= 1.00x:</strong> Completely Unrelated Items
+            <div className="cobuy-modal-body">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {/* Overall Assessment Banner */}
+                <div style={{
+                  padding: '0.85rem 1rem',
+                  borderRadius: '10px',
+                  background: stats.health?.status === 'needs_attention' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                  border: stats.health?.status === 'needs_attention' ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '0.65rem'
+                }}>
+                  {stats.health?.status === 'needs_attention' ? (
+                    <AlertTriangle size={18} style={{ color: '#d97706', marginTop: '2px' }} />
+                  ) : (
+                    <CheckCircle2 size={18} style={{ color: '#10b981', marginTop: '2px' }} />
+                  )}
+                  <div>
+                    <div style={{ fontWeight: '700', fontSize: '0.88rem', color: stats.health?.status === 'needs_attention' ? '#d97706' : '#10b981' }}>
+                      Status: {stats.health?.status_label || 'Ready'}
+                    </div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                      {stats.health?.message || 'Your dataset satisfies all validation requirements.'}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
 
-            {/* Pro Tips Footer */}
-            <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                <CheckCircle2 size={16} style={{ color: 'var(--accent-color)' }} />
-                <span>Tip: Click <strong>Shopping Pattern Finder</strong> in the sidebar to adjust minimum Support & Confidence thresholds.</span>
+                {/* Detected Schema Columns */}
+                <div>
+                  <div style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>
+                    Detected Columns
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem' }}>
+                    {(stats.health?.columns_detected || ['Transaction ID', 'Item Name']).map((col, i) => (
+                      <span
+                        key={i}
+                        style={{
+                          padding: '0.3rem 0.65rem',
+                          borderRadius: '6px',
+                          background: 'var(--inner-box-bg)',
+                          border: '1px solid var(--border-color)',
+                          fontSize: '0.78rem',
+                          fontWeight: '600',
+                          color: 'var(--text-main)'
+                        }}
+                      >
+                        {col}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Validation Metrics Table */}
+                <div style={{ border: '1px solid var(--border-color)', borderRadius: '10px', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-color)', fontSize: '0.82rem' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Valid Transactions:</span>
+                    <strong style={{ color: 'var(--text-main)' }}>{stats.total_transactions.toLocaleString()}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-color)', fontSize: '0.82rem' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Unique Products Mapped:</span>
+                    <strong style={{ color: 'var(--text-main)' }}>{stats.unique_items_count}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-color)', fontSize: '0.82rem' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Transaction Date Coverage:</span>
+                    <strong style={{ color: 'var(--text-main)' }}>{stats.health?.distinct_dates_count || trends.length || 1} day(s) ({formattedActiveDate})</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-color)', fontSize: '0.82rem' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Missing Product Names:</span>
+                    <strong style={{ color: 'var(--text-main)' }}>{stats.health?.missing_names_count || 0}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem 1rem', fontSize: '0.82rem' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Duplicate Records Cleaned:</span>
+                    <strong style={{ color: 'var(--text-main)' }}>{stats.health?.duplicates_removed || 0}</strong>
+                  </div>
+                </div>
               </div>
-              <button
-                className="btn btn-primary"
-                onClick={() => setShowPatternsModal(false)}
-                style={{ padding: '0.6rem 1.5rem', fontSize: '0.9rem' }}
-              >
-                Got It
-              </button>
             </div>
           </div>
         </div>

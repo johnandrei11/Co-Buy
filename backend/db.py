@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import datetime
+import json
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database.db')
 
@@ -152,6 +153,9 @@ def init_db():
         ('market_type',     "ALTER TABLE datasets ADD COLUMN market_type TEXT DEFAULT 'Default/unknown'"),
         ('basket_avg',      "ALTER TABLE datasets ADD COLUMN basket_avg REAL DEFAULT NULL"),
         ('date_range_days', "ALTER TABLE datasets ADD COLUMN date_range_days INTEGER DEFAULT NULL"),
+        ('missing_count',   "ALTER TABLE datasets ADD COLUMN missing_count INTEGER DEFAULT 0"),
+        ('duplicates_count', "ALTER TABLE datasets ADD COLUMN duplicates_count INTEGER DEFAULT 0"),
+        ('columns_detected', "ALTER TABLE datasets ADD COLUMN columns_detected TEXT DEFAULT NULL"),
     ]:
         if col_name not in ds_columns:
             try:
@@ -649,6 +653,15 @@ def get_store_users_for_filter(store_id):
 
 # ── Transaction helpers ───────────────────────────────────────────────────────
 
+def verify_dataset_ownership(dataset_id, user_email):
+    """Verify that dataset exists and belongs to user_email."""
+    if not dataset_id or not user_email:
+        return None
+    conn = get_db_connection()
+    row = conn.execute('SELECT * FROM datasets WHERE id = ? AND user_email = ?', (dataset_id, user_email)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
 def get_transactions(user_email=None, dataset_id=None):
     conn = get_db_connection()
     query = 'SELECT t.id, ti.item FROM transactions t JOIN transaction_items ti ON t.id = ti.transaction_id'
@@ -656,8 +669,8 @@ def get_transactions(user_email=None, dataset_id=None):
     if dataset_id:
         conditions.append("t.dataset_id = ?")
         params.append(dataset_id)
-    elif user_email:
-        conditions.append("(t.user_email = ? OR t.user_email IS NULL)")
+    if user_email:
+        conditions.append("t.user_email = ?")
         params.append(user_email)
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
@@ -681,8 +694,8 @@ def get_transaction_basket_values(user_email=None, dataset_id=None):
     if dataset_id:
         conditions.append("t.dataset_id = ?")
         params.append(dataset_id)
-    elif user_email:
-        conditions.append("(t.user_email = ? OR t.user_email IS NULL)")
+    if user_email:
+        conditions.append("t.user_email = ?")
         params.append(user_email)
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
@@ -700,8 +713,8 @@ def get_transactions_with_dates(user_email=None, dataset_id=None):
     if dataset_id:
         conditions.append("t.dataset_id = ?")
         params.append(dataset_id)
-    elif user_email:
-        conditions.append("(t.user_email = ? OR t.user_email IS NULL)")
+    if user_email:
+        conditions.append("t.user_email = ?")
         params.append(user_email)
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
@@ -753,7 +766,7 @@ def add_transaction(items, user_email=None, dataset_id=None):
         conn.close()
     return tx_id
 
-def add_transactions(list_of_items, dataset_id=None, user_email=None, basket_values=None):
+def add_transactions(list_of_items, dataset_id=None, user_email=None, basket_values=None, dates=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -762,7 +775,11 @@ def add_transactions(list_of_items, dataset_id=None, user_email=None, basket_val
             cursor.execute('INSERT OR IGNORE INTO products (name) VALUES (?)', (item,))
         for i, items in enumerate(list_of_items):
             bv = float(basket_values[i]) if basket_values and i < len(basket_values) else None
-            cursor.execute('INSERT INTO transactions (dataset_id, user_email, basket_value) VALUES (?, ?, ?)', (dataset_id, user_email, bv))
+            dt = dates[i] if dates and i < len(dates) and dates[i] else None
+            if dt:
+                cursor.execute('INSERT INTO transactions (dataset_id, user_email, basket_value, created_at) VALUES (?, ?, ?, ?)', (dataset_id, user_email, bv, dt))
+            else:
+                cursor.execute('INSERT INTO transactions (dataset_id, user_email, basket_value) VALUES (?, ?, ?)', (dataset_id, user_email, bv))
             tx_id = cursor.lastrowid
             cursor.executemany('INSERT INTO transaction_items (transaction_id, item) VALUES (?, ?)', [(tx_id, item) for item in items])
         conn.commit()
@@ -814,12 +831,14 @@ def get_dataset_by_id(dataset_id, user_email=None):
     return dict(row) if row else None
 
 def add_dataset(name, transaction_count, unique_items, user_email=None, file_hash=None,
-                market_type='Default/unknown', basket_avg=None, date_range_days=None):
+                market_type='Default/unknown', basket_avg=None, date_range_days=None,
+                missing_count=0, duplicates_count=0, columns_detected=None):
     conn = get_db_connection()
     cursor = conn.cursor()
+    cols_json = json.dumps(columns_detected) if columns_detected and isinstance(columns_detected, (list, dict)) else columns_detected
     cursor.execute(
-        'INSERT INTO datasets (name, user_email, file_hash, market_type, transaction_count, unique_items, basket_avg, date_range_days) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        (name, user_email, file_hash, market_type, transaction_count, unique_items, basket_avg, date_range_days)
+        'INSERT INTO datasets (name, user_email, file_hash, market_type, transaction_count, unique_items, basket_avg, date_range_days, missing_count, duplicates_count, columns_detected) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        (name, user_email, file_hash, market_type, transaction_count, unique_items, basket_avg, date_range_days, missing_count, duplicates_count, cols_json)
     )
     ds_id = cursor.lastrowid
     conn.commit()
@@ -861,13 +880,37 @@ def cleanup_duplicate_datasets(user_email=None):
 
 def delete_dataset(dataset_id, user_email=None):
     conn = get_db_connection()
+    cursor = conn.cursor()
     if user_email:
-        conn.execute('DELETE FROM datasets WHERE id = ? AND user_email = ?', (dataset_id, user_email))
+        cursor.execute('DELETE FROM datasets WHERE id = ? AND user_email = ?', (dataset_id, user_email))
     else:
-        conn.execute('DELETE FROM datasets WHERE id = ?', (dataset_id,))
+        cursor.execute('DELETE FROM datasets WHERE id = ?', (dataset_id,))
+    deleted = cursor.rowcount > 0
     conn.commit()
     conn.close()
-    return True
+    return deleted
+
+def get_products_for_user(user_email=None):
+    conn = get_db_connection()
+    if user_email:
+        rows = conn.execute('''
+            SELECT DISTINCT ti.item as name, COUNT(DISTINCT t.id) as tx_count
+            FROM transaction_items ti
+            JOIN transactions t ON ti.transaction_id = t.id
+            WHERE t.user_email = ?
+            GROUP BY ti.item
+            ORDER BY tx_count DESC, ti.item ASC
+        ''', (user_email,)).fetchall()
+    else:
+        rows = conn.execute('''
+            SELECT DISTINCT ti.item as name, COUNT(DISTINCT t.id) as tx_count
+            FROM transaction_items ti
+            JOIN transactions t ON ti.transaction_id = t.id
+            GROUP BY ti.item
+            ORDER BY tx_count DESC, ti.item ASC
+        ''').fetchall()
+    conn.close()
+    return [{'id': idx + 1, 'name': row['name'], 'count': row['tx_count']} for idx, row in enumerate(rows)]
 
 def get_products():
     conn = get_db_connection()

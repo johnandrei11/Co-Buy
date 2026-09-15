@@ -1,44 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import {
-  Upload,
-  Play,
-  Download,
-  RefreshCw,
-  Search,
-  CheckCircle,
   AlertTriangle,
-  Database,
-  Plus,
-  Trash2,
-  X,
-  ShoppingCart,
-  Zap,
-  TrendingUp,
-  Sliders,
-  List,
-  Lock,
-  Unlock,
   RotateCcw,
-  Edit,
-  Info,
-  ChevronDown,
-  ChevronUp,
-  HelpCircle,
-  BookOpen,
-  CheckCircle2,
-  Cpu,
-  Layers,
-  Loader2
+  Sliders,
+  Calendar,
+  Sparkles
 } from 'lucide-react';
 
-import {
-  CartesianGrid,
-  Tooltip,
-} from 'recharts';
-
-
+import AnalyticsSetupState from '../components/analytics/AnalyticsSetupState';
+import SampleFileModal from '../components/analytics/SampleFileModal';
+import ItemFrequencies from '../components/analytics/ItemFrequencies';
+import RecommendationsView from '../components/analytics/RecommendationsView';
+import MiningParametersModal from '../components/analytics/MiningParametersModal';
+import MiningEngineModal from '../components/analytics/MiningEngineModal';
+import '../components/analytics/analytics.css';
 
 const API_BASE = 'http://localhost:5000/api';
 
@@ -82,8 +59,32 @@ const Analytics = () => {
 
   const [results, setResults] = useState(() => {
     const saved = sessionStorage.getItem('analytics_results');
-    return saved ? JSON.parse(saved) : null;
+    if (!saved) return null;
+    try {
+      const parsed = JSON.parse(saved);
+      const activeId = new URLSearchParams(window.location.search).get('dataset_id') || localStorage.getItem('activeDatasetId');
+      if (activeId && parsed && parsed.dataset_id && String(parsed.dataset_id) !== String(activeId)) {
+        return null;
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
   });
+
+  const [forceSetupView, setForceSetupView] = useState(false);
+  const [showSampleModal, setShowSampleModal] = useState(false);
+
+  const user = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('user') || '{}');
+    } catch {
+      return {};
+    }
+  })();
+  const userName = user?.full_name || user?.name || (user?.email ? user.email.split('@')[0] : 'John Andreil');
+
+  const hasResults = Boolean(results && (results.rules?.length > 0 || results.frequent_itemsets?.length > 0 || results.metrics));
 
   useEffect(() => {
     sessionStorage.setItem('analytics_params', JSON.stringify(params));
@@ -116,6 +117,7 @@ const Analytics = () => {
     return saved === 'true';
   });
   const [showMiningModal, setShowMiningModal] = useState(false);
+  const [showParamsModal, setShowParamsModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [coBoughtResults, setCoBoughtResults] = useState([]);
   const [loadingCoBought, setLoadingCoBought] = useState(false);
@@ -140,11 +142,6 @@ const Analytics = () => {
     return saved ? JSON.parse(saved) : null;
   });
 
-  const [filterLowCoherence, setFilterLowCoherence] = useState(() => {
-    const saved = sessionStorage.getItem('analytics_filter_coherence');
-    return saved !== null ? saved === 'true' : true;
-  });
-
   // ── Consolidation configuration ───────────────────────────────────────────
   /** Min confidence gap (fraction) between rank-1 and rank-2 to choose 'single' mode. */
   const CONSOLIDATION_GAP_THRESHOLD = 0.15;
@@ -152,117 +149,6 @@ const Analytics = () => {
   const CONSOLIDATION_NOTABLE_FLOOR = 0.40;
   /** Min antecedent transaction count to consider a rule reliably established. */
   const RELIABILITY_MIN_TX_COUNT = 20;
-
-  // ── Category coherence & store-aware taxonomy ─────────────────────────────
-  const STORE_CATEGORY_KEYWORDS = {
-    'Pet Food': {
-      cat: ['cat', 'feline', 'litter', 'scoop', 'scratch', 'nip', 'meow'],
-      dog: ['dog', 'canine', 'puppy', 'bone', 'chew', 'leash', 'collar', 'bark', 'kennel', 'woof'],
-      other_pets: ['bird', 'seed', 'parrot', 'hamster', 'bedding', 'cage', 'wheel', 'fish', 'aquarium', 'turtle', 'reptile', 'rabbit'],
-      general_pet: ['pet food', 'treat', 'bowl', 'brush', 'toy', 'shampoo']
-    },
-    'Coffee Shop': {
-      beverage: ['latte', 'coffee', 'espresso', 'americano', 'cappuccino', 'macchiato', 'tea', 'juice', 'soda', 'water', 'milk', 'drink', 'smoothie', 'frappe'],
-      modifier: ['shot', 'extra', 'decaf', 'oat', 'almond', 'skim', 'half', 'large', 'small', 'medium', 'hot', 'cold', 'ice'],
-      baked_good: ['croissant', 'bagel', 'muffin', 'scone', 'bread', 'cookie', 'pastry', 'donut', 'cake', 'bun', 'roll', 'pretzel'],
-      food: ['sandwich', 'salad', 'wrap', 'bowl', 'rice', 'noodle', 'chicken', 'beef', 'fish', 'egg', 'meal'],
-      condiment: ['sugar', 'syrup', 'sauce', 'cream', 'butter', 'jam', 'honey', 'spread']
-    },
-    'Convenience Store': {
-      grilling: ['hotdog', 'burger', 'bun', 'ketchup', 'mustard', 'charcoal', 'lighter', 'grill', 'bbq', 'sausage', 'relish'],
-      beverage_pairing: ['beer', 'wine', 'alcohol', 'ice', 'peanuts', 'chips', 'pretzel', 'snack', 'cola', 'soda'],
-      cleaning: ['detergent', 'dish soap', 'soap', 'sponge', 'bleach', 'cleaner', 'shampoo', 'toothpaste', 'wipes', 'tissue', 'sanitizer', 'diapers', 'trash bag'],
-      morning: ['coffee', 'tea', 'creamer', 'milk', 'sugar', 'bread', 'bagel', 'butter', 'egg', 'cereal', 'oat', 'juice']
-    }
-  };
-
-  const CATEGORY_KEYWORDS = {
-    beverage: ['latte', 'coffee', 'espresso', 'americano', 'cappuccino', 'macchiato', 'tea', 'juice', 'soda', 'water', 'milk', 'drink', 'smoothie', 'frappe', 'beer', 'cola'],
-    baked_good: ['croissant', 'bagel', 'muffin', 'scone', 'bread', 'cookie', 'pastry', 'donut', 'cake', 'bun', 'roll', 'pretzel'],
-    food: ['sandwich', 'salad', 'wrap', 'bowl', 'rice', 'noodle', 'chicken', 'beef', 'fish', 'egg', 'meal', 'kibble', 'treat', 'pet food', 'dog food', 'cat food', 'burger', 'hotdog', 'peanuts'],
-    condiment: ['sugar', 'syrup', 'sauce', 'cream', 'butter', 'jam', 'honey', 'ketchup', 'mustard', 'dressing', 'spread', 'creamer'],
-    consumable: ['shampoo', 'soap', 'toothpaste', 'detergent', 'litter', 'wipes', 'tissue', 'sanitizer', 'diapers', 'charcoal', 'lighter', 'sponge', 'bedding'],
-    accessory: ['leash', 'collar', 'bowl', 'toy', 'brush', 'bag', 'bottle', 'cup', 'mug', 'tray', 'case', 'scoop', 'bone', 'nip'],
-    modifier: ['shot', 'extra', 'decaf', 'oat', 'almond', 'skim', 'half', 'large', 'small', 'medium', 'hot', 'cold', 'ice'],
-  };
-
-  const inferItemCategory = (itemName, marketType) => {
-    const lower = (itemName || '').toLowerCase();
-    // 1. Check store-specific keywords first
-    if (marketType && STORE_CATEGORY_KEYWORDS[marketType]) {
-      for (const [cat, keywords] of Object.entries(STORE_CATEGORY_KEYWORDS[marketType])) {
-        if (keywords.some(kw => lower.includes(kw))) return cat;
-      }
-    }
-    // 2. Check general category keywords
-    for (const [cat, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
-      if (keywords.some(kw => lower.includes(kw))) return cat;
-    }
-    return 'general';
-  };
-
-  const COMPATIBLE_GROUPS = {
-    'Pet Food': {
-      groups: {
-        cat: ['cat', 'general_pet', 'general', 'food', 'accessory', 'consumable'],
-        dog: ['dog', 'general_pet', 'general', 'food', 'accessory', 'consumable'],
-        other_pets: ['other_pets', 'general_pet', 'general', 'food', 'accessory', 'consumable'],
-      }
-    },
-    'Coffee Shop': {
-      groups: {
-        cafe_experience: ['beverage', 'modifier', 'baked_good', 'food', 'condiment', 'general'],
-      }
-    },
-    'Convenience Store': {
-      groups: {
-        grilling: ['grilling', 'general', 'food', 'condiment'],
-        beverage_pairing: ['beverage_pairing', 'beverage', 'general', 'food'],
-        cleaning: ['cleaning', 'consumable', 'general'],
-        morning: ['morning', 'beverage', 'baked_good', 'condiment', 'general', 'food'],
-      }
-    }
-  };
-
-  /**
-   * Calculates category coherence score for an itemset/antecedent with 2+ items.
-   * Returns { score: number, isCoherent: boolean, categories: string[] }
-   */
-  const calculateCategoryCoherence = (itemList, marketType) => {
-    if (!itemList || itemList.length < 2) {
-      return { score: 1.0, isCoherent: true, categories: (itemList || []).map(i => inferItemCategory(i, marketType)) };
-    }
-    const categories = itemList.map(item => inferItemCategory(item, marketType));
-
-    // Check if all items share the exact same category
-    const uniqueCats = new Set(categories);
-    if (uniqueCats.size === 1) {
-      return { score: 1.0, isCoherent: true, categories };
-    }
-
-    let maxCompatibleSize = 1;
-    if (marketType && COMPATIBLE_GROUPS[marketType]) {
-      for (const allowedCategories of Object.values(COMPATIBLE_GROUPS[marketType].groups)) {
-        const matchCount = categories.filter(c => allowedCategories.includes(c)).length;
-        if (matchCount > maxCompatibleSize) {
-          maxCompatibleSize = matchCount;
-        }
-      }
-    } else {
-      const counts = {};
-      let generalCount = 0;
-      categories.forEach(c => {
-        if (c === 'general') generalCount++;
-        else counts[c] = (counts[c] || 0) + 1;
-      });
-      const maxSpec = Object.values(counts).length > 0 ? Math.max(...Object.values(counts)) : 0;
-      maxCompatibleSize = maxSpec + generalCount;
-    }
-
-    const score = maxCompatibleSize / itemList.length;
-    const isCoherent = score >= 0.75;
-    return { score, isCoherent, categories };
-  };
 
   // ── Store-type + tie-mode aware suggestion templates (3-D map) ───────────
   // Keyed by [market_type][action_category][tie_mode]
@@ -365,16 +251,12 @@ const Analytics = () => {
     csvContent += "=== COMMON ITEM COMBOS ===\n";
     csvContent += "Common Item Combos,Qty,N-Item Size,How Common This Is\n";
     if (results.frequent_itemsets && results.frequent_itemsets.length > 0) {
-      const csvMarketType = results?.metrics?.adaptive_thresholds?.market_type || 'Default/unknown';
       results.frequent_itemsets.forEach(set => {
-        const coherence = set.items.length >= 2 ? calculateCategoryCoherence(set.items, csvMarketType) : { isCoherent: true, score: 1.0 };
-        if (!coherence.isCoherent && filterLowCoherence) return;
         const itemsStr = `"${set.items.join(', ')}"`;
         const qty = Math.round(set.support * (stats.total_transactions || 0));
         const size = `${set.items.length}-item set`;
         const supportPct = `${(set.support * 100).toFixed(2)}%`;
-        const note = !coherence.isCoherent ? " (Unusual cross-category combo)" : "";
-        csvContent += `${itemsStr},${qty},${size},${supportPct}${note}\n`;
+        csvContent += `${itemsStr},${qty},${size},${supportPct}\n`;
       });
     } else {
       csvContent += "No common item combos found,,,\n";
@@ -399,8 +281,7 @@ const Analytics = () => {
         const csvMarketType = results?.metrics?.adaptive_thresholds?.market_type || 'Default/unknown';
         const anchor = suggestion.antecedents.join(', ');
         const csvCategory = isHighConfidence ? 'bundle' : isMediumConfidence ? 'cross_promo' : 'placement';
-        const action = getSuggestedAction(csvCategory, csvMarketType, anchor, suggestion);
-        const note = suggestion.isLowCoherence ? " [Unusual combination]" : "";
+        const note = "";
         csvContent += `${fbt},${patternStr},${confidencePct},${liftValue},"${action}${note}"\n`;
       });
     } else {
@@ -494,6 +375,29 @@ const Analytics = () => {
     }
   }, [datasetId]);
 
+  useEffect(() => {
+    const s = searchParams.get('search');
+    if (s !== null && s !== undefined) {
+      setRecommendationSearchTerm(s);
+    }
+    const p = searchParams.get('product');
+    if (p) {
+      setSelectedProduct(p);
+      fetchCoBoughtTogether(p, datasetId);
+    }
+  }, [searchParams, datasetId]);
+
+  // Auto-run mining whenever a dataset is active but results are missing or out of sync
+  useEffect(() => {
+    const currentDsId = datasetId || localStorage.getItem('activeDatasetId');
+    if (currentDsId) {
+      const hasMinedForThisDataset = results && String(results.dataset_id) === String(currentDsId);
+      if (!hasMinedForThisDataset && miningStatus !== 'mining') {
+        runMining({ dataset_id: currentDsId });
+      }
+    }
+  }, [datasetId, results?.dataset_id]);
+
   const handleFileUpload = async (e) => {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -536,10 +440,11 @@ const Analytics = () => {
         sessionStorage.removeItem('analytics_cleaning_stats');
       }
       await fetchStats(response.data.dataset_id);
-      setResults(null);
-      setMiningStatus('idle');
-      sessionStorage.removeItem('analytics_results');
       setUploadStatus('success');
+      setForceSetupView(false);
+      if (!response.data.is_empty && response.data.transaction_count > 0) {
+        await runMining({ dataset_id: response.data.dataset_id });
+      }
     } catch (err) {
       setUploadStatus('error');
       const errDetail = err.response?.data?.error || 'Failed to upload file. Please check file format and try again.';
@@ -568,6 +473,7 @@ const Analytics = () => {
       setCleaningStats(null);
       setSelectedProduct(null);
       setCoBoughtResults([]);
+      setForceSetupView(false);
       sessionStorage.removeItem('analytics_file_name');
       sessionStorage.removeItem('analytics_cleaning_stats');
       sessionStorage.removeItem('analytics_results');
@@ -588,21 +494,27 @@ const Analytics = () => {
     }
   };
 
-  const runMining = async () => {
+  const runMining = async (overrideParams = null) => {
     setMiningStatus('mining');
     try {
+      const activeParams = overrideParams || params;
+      const targetDatasetId = (overrideParams && overrideParams.dataset_id) || datasetId || localStorage.getItem('activeDatasetId');
       const payload = {
-        ...params,
-        min_support: parseFloat(params.min_support) || 0.05,
-        min_confidence: parseFloat(params.min_confidence) || 0.5,
-        min_lift: parseFloat(params.min_lift) || 1.0,
-        dataset_id: datasetId
+        ...activeParams,
+        min_support: parseFloat(activeParams.min_support) || 0.05,
+        min_confidence: parseFloat(activeParams.min_confidence) || 0.5,
+        min_lift: parseFloat(activeParams.min_lift) || 1.0,
+        dataset_id: targetDatasetId
       };
       const response = await axios.post(`${API_BASE}/mine`, payload);
-      setResults(response.data);
-      sessionStorage.setItem('analytics_results', JSON.stringify(response.data));
-      if (datasetId) {
-        localStorage.setItem('activeDatasetId', datasetId);
+      const minedData = {
+        ...response.data,
+        dataset_id: response.data.dataset_id || targetDatasetId
+      };
+      setResults(minedData);
+      sessionStorage.setItem('analytics_results', JSON.stringify(minedData));
+      if (targetDatasetId) {
+        localStorage.setItem('activeDatasetId', targetDatasetId);
         if (activeDatasetName) {
           localStorage.setItem('activeDatasetName', activeDatasetName);
         } else if (file && file.name) {
@@ -610,43 +522,22 @@ const Analytics = () => {
         }
       }
       setMiningStatus('success');
+      setForceSetupView(false);
     } catch (err) {
       setMiningStatus('error');
       console.error(err);
     }
   };
 
-  // Removed automatic execution of mining algorithm upon stats.active change
-
-  // Filter products in stats table
-  const filteredItems = (stats.all_items || []).filter(item =>
-    item.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   // Step 1a: De-mirror — for each {A,B} pair keep only the higher-confidence direction
   const getFilteredRules = () => {
     if (!results || !results.rules) return [];
-    const marketType = results?.metrics?.adaptive_thresholds?.market_type || 'Default/unknown';
     const seen = new Map();
     results.rules.forEach(rule => {
-      // Coherence check for antecedent itemsets with 2+ items
-      const antCoherence = rule.antecedents.length >= 2
-        ? calculateCategoryCoherence(rule.antecedents, marketType)
-        : { isCoherent: true, score: 1.0 };
-
-      if (!antCoherence.isCoherent && filterLowCoherence) {
-        return; // Exclude if Option A (strict coherence filter) is active
-      }
-
       const key = [...rule.antecedents, ...rule.consequents].sort().join(',');
       const existing = seen.get(key);
       if (!existing || rule.confidence > existing.confidence) {
-        const enrichedRule = {
-          ...rule,
-          isLowCoherence: !antCoherence.isCoherent,
-          coherenceScore: antCoherence.score
-        };
-        seen.set(key, enrichedRule);
+        seen.set(key, rule);
       }
     });
     return Array.from(seen.values());
@@ -681,30 +572,18 @@ const Analytics = () => {
       let tieItems = [top.consequents.join(', ')];
       let allTiedRules = [top];
 
-      const isCompatibleCategory = (item1, item2) => {
-        const c1 = inferItemCategory(item1, marketType);
-        const c2 = inferItemCategory(item2, marketType);
-        if (c1 === c2 || c1 === 'general' || c2 === 'general') return true;
-        if (marketType && COMPATIBLE_GROUPS[marketType]) {
-          return Object.values(COMPATIBLE_GROUPS[marketType].groups).some(g => g.includes(c1) && g.includes(c2));
-        }
-        return false;
-      };
-
       if (rules.length >= 2) {
         const gap = top.confidence - rules[1].confidence;
-        // Ensure same-category / compatible group requirement for flexible choice tie-mode
-        if (gap <= CONSOLIDATION_GAP_THRESHOLD && isCompatibleCategory(top.consequents[0], rules[1].consequents[0])) {
+        if (gap <= CONSOLIDATION_GAP_THRESHOLD) {
           tieMode = 'flexible';
           allTiedRules = [rules[0], rules[1]];
           tieItems = [rules[0].consequents.join(', '), rules[1].consequents.join(', ')];
-          // Include rank-3 only if it clears the notable floor AND matches category compatibility
-          if (rules.length >= 3 && rules[2].confidence >= CONSOLIDATION_NOTABLE_FLOOR && isCompatibleCategory(top.consequents[0], rules[2].consequents[0])) {
+          // Include rank-3 only if it clears the notable floor
+          if (rules.length >= 3 && rules[2].confidence >= CONSOLIDATION_NOTABLE_FLOOR) {
             allTiedRules.push(rules[2]);
             tieItems.push(rules[2].consequents.join(', '));
           }
         }
-        // rank-1 is dominant (gap > threshold): suppress all lower ranks → tieMode stays 'single'
       }
 
       consolidated.push({
@@ -716,8 +595,6 @@ const Analytics = () => {
         support: top.support,
         tieMode,
         allTiedRules,
-        isLowCoherence: top.isLowCoherence,
-        coherenceScore: top.coherenceScore,
         // ── Enrichment fields from backend (passed through from top rule) ──
         ant_tx_count: top.ant_tx_count,
         rule_tx_count: top.rule_tx_count,
@@ -728,13 +605,8 @@ const Analytics = () => {
       });
     });
 
-    // Final sort: highest confidence first, but deprioritize low coherence if Option B is active
-    consolidated.sort((a, b) => {
-      if (a.isLowCoherence !== b.isLowCoherence) {
-        return a.isLowCoherence ? 1 : -1;
-      }
-      return b.confidence - a.confidence;
-    });
+    // Final sort: highest confidence first, then lift as tiebreaker
+    consolidated.sort((a, b) => b.confidence - a.confidence || b.lift - a.lift);
     return consolidated;
   };
 
@@ -742,7 +614,7 @@ const Analytics = () => {
 
   const filteredConsolidatedRules = consolidatedRules.filter(rule => {
     if (!recommendationSearchTerm.trim()) return true;
-    const term = recommendationSearchTerm.toLowerCase();
+    const term = recommendationSearchTerm.trim().toLowerCase();
     const antMatch = (rule.antecedents || []).some(a => a.toLowerCase().includes(term));
     const consMatch = (rule.consequents || []).some(c => c.toLowerCase().includes(term));
     const tieMatch = (rule.tieItems || []).some(t => t.toLowerCase().includes(term));
@@ -751,38 +623,21 @@ const Analytics = () => {
 
   const getGroupedItemsets = () => {
     if (!results || !results.frequent_itemsets) return [];
-    const marketType = results?.metrics?.adaptive_thresholds?.market_type || 'Default/unknown';
 
     const groups = {};
     results.frequent_itemsets.forEach(set => {
       const size = set.items.length;
-      let isLowCoherence = false;
-      let coherenceScore = 1.0;
-      if (size >= 2) {
-        const coherence = calculateCategoryCoherence(set.items, marketType);
-        if (!coherence.isCoherent && filterLowCoherence) {
-          return; // Exclude if Option A is active
-        }
-        isLowCoherence = !coherence.isCoherent;
-        coherenceScore = coherence.score;
-      }
-      const enrichedSet = { ...set, isLowCoherence, coherenceScore };
       if (!groups[size]) {
         groups[size] = [];
       }
-      groups[size].push(enrichedSet);
+      groups[size].push(set);
     });
 
     return Object.keys(groups)
       .map(Number)
       .sort((a, b) => a - b)
       .map(size => {
-        const sortedItems = [...groups[size]].sort((a, b) => {
-          if (a.isLowCoherence !== b.isLowCoherence) {
-            return a.isLowCoherence ? 1 : -1;
-          }
-          return b.support - a.support;
-        });
+        const sortedItems = [...groups[size]].sort((a, b) => b.support - a.support);
         return {
           size,
           label: size === 1 ? 'Single Products (1-Item Sets)' :
@@ -799,1413 +654,200 @@ const Analytics = () => {
 
   const filteredGroupedSets = groupedSets.map(group => {
     if (!recommendationSearchTerm.trim()) return group;
-    const term = recommendationSearchTerm.toLowerCase();
+    const term = recommendationSearchTerm.trim().toLowerCase();
     const matchingItems = group.items.filter(item =>
       (item.items || []).some(it => it.toLowerCase().includes(term))
     );
     return { ...group, items: matchingItems };
   }).filter(group => group.items.length > 0);
 
-  const totalFilteredItemsetsCount = filteredGroupedSets.reduce((sum, group) => sum + group.items.length, 0);
-
-
   const hasActiveSource = Boolean((file || datasetId) && (stats.active || stats.total_transactions > 0 || uploadStatus === 'uploading'));
-  const isRunActive = miningStatus === 'success' || !!results;
+
+  if (!hasResults || forceSetupView) {
+    return (
+      <div className="cobuy-analytics-container fade-in">
+        {hasResults && forceSetupView && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '-0.5rem' }}>
+            <button
+              type="button"
+              className="cobuy-new-analysis-btn"
+              onClick={() => setForceSetupView(false)}
+            >
+              ← Back to Results
+            </button>
+          </div>
+        )}
+        <AnalyticsSetupState
+          file={file}
+          uploadStatus={uploadStatus}
+          uploadError={uploadError}
+          stats={stats}
+          onFileUpload={handleFileUpload}
+          onClearFile={() => {
+            setFile(null);
+            setUploadStatus('idle');
+            setUploadError(null);
+            sessionStorage.removeItem('analytics_file_name');
+          }}
+          isAnalyzing={miningStatus === 'mining'}
+          onRunAnalysis={() => runMining()}
+          onOpenParamsModal={() => setShowParamsModal(true)}
+          onOpenSampleModal={() => setShowSampleModal(true)}
+        />
+        <SampleFileModal
+          isOpen={showSampleModal}
+          onClose={() => setShowSampleModal(false)}
+        />
+        <MiningParametersModal
+          isOpen={showParamsModal}
+          onClose={() => setShowParamsModal(false)}
+          params={params}
+          onSaveAndRun={(newParams) => {
+            setParams(newParams);
+            sessionStorage.setItem('analytics_params', JSON.stringify(newParams));
+            runMining(newParams);
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
-    <div className="fade-in">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">
-            <ShoppingCart size={28} style={{ color: 'var(--primary-color)' }} />
-            Shopping Pattern Finder
-          </h1>
-          <p className="page-subtitle">Configure parameters, view product frequencies, and generate buying patterns.</p>
-        </div>
-        <div style={{ display: 'flex', gap: '1rem' }}>
-          {hasActiveSource && (
-            (miningStatus === 'success' || !!results) ? (
-              <button
-                className="btn btn-danger btn-action"
-                onClick={handleClearSession}
-              >
-                <Trash2 size={18} /> Clear Session
-              </button>
-            ) : (
-              <button
-                className="btn btn-primary btn-action"
-                onClick={runMining}
-                disabled={miningStatus === 'mining'}
-              >
-                {miningStatus === 'mining' ? <RefreshCw size={18} className="spin" /> : <Play size={18} />}
-                Run Algorithm
-              </button>
-            )
-          )}
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: '2rem' }}>
-        {/* Left Column: Configuration Panel */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div className="card">
-            <h3 style={{ fontSize: '0.9rem', fontWeight: '700', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Database size={16} /> Data Setup
-            </h3>
-
-            {hasActiveSource && (datasetId || activeDatasetName) && (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '0.75rem 0.85rem',
-                background: 'rgba(99, 102, 241, 0.04)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '8px',
-                marginBottom: '1.25rem',
-                fontSize: '0.8rem'
-              }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', overflow: 'hidden', marginRight: '0.5rem' }}>
-                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Active Dataset</span>
-                  <span className="mono" style={{ color: '#fff', fontWeight: '600', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }} title={activeDatasetName || (file ? file.name : `Dataset #${datasetId}`)}>
-                    {activeDatasetName || (file ? file.name : `Dataset #${datasetId}`)}
-                  </span>
-                </div>
-                <Link to="/history" style={{ color: 'var(--primary-color)', textDecoration: 'none', fontWeight: '600', fontSize: '0.75rem', flexShrink: 0 }}>
-                  Change
-                </Link>
-              </div>
-            )}
-
-            <div className="form-group">
-              <div
-                style={{
-                  border: '1px dashed var(--border-color)',
-                  borderRadius: '10px',
-                  padding: '1.5rem',
-                  height: '120px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: (isRunActive || uploadStatus === 'uploading') ? 'not-allowed' : 'pointer',
-                  opacity: isRunActive ? 0.5 : 1,
-                  background: file ? 'rgba(255, 255, 255, 0.02)' : 'transparent',
-                  transition: 'var(--transition)',
-                  marginBottom: '0.5rem',
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  overflow: 'hidden',
-                  position: 'relative'
-                }}
-                title={
-                  uploadStatus === 'uploading'
-                    ? 'Uploading...'
-                    : isRunActive
-                    ? "Analysis already completed. Click 'Clear Session' to upload another file."
-                    : "Click to choose a CSV file"
-                }
-                onClick={() => {
-                  if (!isRunActive && uploadStatus !== 'uploading') {
-                    document.getElementById('file-upload').click();
-                  }
-                }}
-              >
-                <input
-                  type="file" id="file-upload" hidden
-                  disabled={isRunActive || uploadStatus === 'uploading'}
-                  onChange={handleFileUpload}
-                  accept=".csv, .xlsx, .xls"
-                />
-                {uploadStatus === 'uploading' ? (
-                  <>
-                    <Loader2 size={24} className="spin" style={{ color: 'var(--text-muted)', marginBottom: '0.75rem', flexShrink: 0 }} />
-                    <div style={{
-                      fontSize: '0.85rem',
-                      fontWeight: '600',
-                      color: 'var(--text-muted)',
-                      width: '100%',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      textAlign: 'center'
-                    }}>
-                      Uploading...
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <Upload size={24} style={{ color: 'var(--text-muted)', marginBottom: '0.75rem', flexShrink: 0 }} />
-                    <div style={{
-                      fontSize: '0.85rem',
-                      fontWeight: '600',
-                      color: file ? '#fff' : 'var(--text-muted)',
-                      width: '100%',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      textAlign: 'center'
-                    }}>
-                      {file ? file.name : 'Choose a CSV file'}
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <div style={{ minHeight: '20px', marginBottom: '0.5rem' }}>
-                {uploadStatus !== 'uploading' && loadingStats ? (
-                  <div style={{
-                    color: 'var(--text-muted)',
-                    fontSize: '0.78rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.45rem',
-                    fontWeight: '500',
-                    padding: '0.25rem 0'
-                  }}>
-                    <Loader2 size={14} className="spin" /> Loading transaction stats...
-                  </div>
-                ) : uploadStatus !== 'uploading' && (
-                  <>
-                    {hasActiveSource && stats.total_transactions > 0 && (
-                      <div style={{ color: '#10b981', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: '600' }}>
-                        <CheckCircle size={14} /> Ready to mine ({stats.total_transactions} transactions loaded)
-                      </div>
-                    )}
-                    {hasActiveSource && isEmptyUpload && stats.total_transactions === 0 && (
-                      <div style={{
-                        marginTop: '0.5rem',
-                        background: 'rgba(245, 158, 11, 0.12)',
-                        border: '1px solid rgba(245, 158, 11, 0.35)',
-                        color: '#fbbf24',
-                        padding: '0.65rem 0.85rem',
-                        borderRadius: '8px',
-                        fontSize: '0.75rem',
-                        lineHeight: '1.5',
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        gap: '0.5rem'
-                      }}>
-                        <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: '2px', color: '#fbbf24' }} />
-                        <div>
-                          <strong>Warning:</strong> Uploaded file contains 0 valid transactions. Ready to run algorithm, but will yield 0 outputs.
-                        </div>
-                      </div>
-                    )}
-                    {duplicateNotice && (
-                      <div style={{
-                        marginTop: '0.75rem',
-                        background: 'rgba(245, 158, 11, 0.12)',
-                        border: '1px solid rgba(245, 158, 11, 0.3)',
-                        color: '#fbbf24',
-                        padding: '0.75rem 1rem',
-                        borderRadius: '8px',
-                        fontSize: '0.78rem',
-                        lineHeight: '1.5',
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        gap: '0.6rem'
-                      }}>
-                        <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: '2px', color: '#fbbf24' }} />
-                        <div>
-                          <strong>File Already in History:</strong> {duplicateNotice}
-                        </div>
-                      </div>
-                    )}
-                    {uploadStatus === 'error' && uploadError && (
-                      <div style={{
-                        marginTop: '0.75rem',
-                        background: 'rgba(239, 68, 68, 0.12)',
-                        border: '1px solid rgba(239, 68, 68, 0.3)',
-                        color: '#f87171',
-                        padding: '0.75rem 1rem',
-                        borderRadius: '8px',
-                        fontSize: '0.78rem',
-                        lineHeight: '1.5',
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        gap: '0.6rem'
-                      }}>
-                        <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: '2px', color: '#f87171' }} />
-                        <div>
-                          <strong>Upload Failed:</strong> {uploadError}
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-
-              {uploadStatus !== 'uploading' && cleaningStats && (
-                <div style={{ marginTop: '0.5rem', background: 'rgba(255, 255, 255, 0.02)', padding: '0.6rem 0.75rem', borderRadius: '6px', fontSize: '0.7rem', border: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
-                  <div style={{ fontWeight: '700', marginBottom: '0.25rem', color: '#fff' }}>Sanitization Details:</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.15rem' }}>
-                    <span>Missing Rows Removed:</span>
-                    <span className="mono" style={{ color: '#fff' }}>{cleaningStats.missing_values_removed}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Duplicate Entries Removed:</span>
-                    <span className="mono" style={{ color: '#fff' }}>{cleaningStats.duplicate_items_removed}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-
-            {!hasActiveSource && (
-              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem', marginTop: '0.5rem' }}>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '500', marginBottom: '0.6rem' }}>
-                  Please input first...
-                </div>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-dim)', margin: '0 0 1rem 0', fontWeight: '500' }}>
-                  Upload a CSV file or choose a file from History
-                </p>
-              </div>
-            )}
-
-            <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1rem', marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Sliders size={14} style={{ color: 'var(--text-muted)' }} />
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Adaptive threshold status available in <Link to="/settings" style={{ color: 'var(--primary-color)', textDecoration: 'underline', fontWeight: '600' }}>Settings</Link>
-              </span>
-            </div>
+    <div className="cobuy-analytics-container fade-in">
+      {/* ── 1. Top-Level Results Header (Matches Reference Screen A) ── */}
+      <div className="cobuy-results-hero">
+        <div className="cobuy-results-hero-left">
+          <div className="cobuy-results-hero-icon">
+            <Sparkles size={22} />
           </div>
-
-
-          {/* Top 10 Sellers */}
-          <div className="card fade-in">
-            <h3 style={{ fontSize: '0.9rem', fontWeight: '700', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary-color)' }}>
-              <TrendingUp size={16} /> Top 10 Sellers
-            </h3>
-            {!results ? (
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', textAlign: 'center', padding: '1.5rem 0', fontStyle: 'italic' }}>
-                No Data (Run algorithm to view top sellers)
-              </div>
-            ) : stats.top_items && stats.top_items.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '300px', overflowY: 'auto', paddingRight: '4px' }}>
-                {stats.top_items.map((item, idx) => (
-                  <div key={item.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span style={{ fontWeight: '700', fontSize: '0.8rem', color: 'var(--text-muted)', width: '16px' }}>{idx + 1}.</span>
-                      <span style={{ fontSize: '0.85rem', fontWeight: '600', color: '#fff' }}>{item.name}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>Qty: {item.value}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', textAlign: 'center', padding: '1rem 0', fontStyle: 'italic' }}>
-                No Data
-              </div>
-            )}
+          <div>
+            <h1 className="cobuy-results-hero-title">
+              Good to see you, {userName}
+            </h1>
+            <p className="cobuy-results-hero-subtitle">
+              Here is a quick overview of your sales insights and product performance.
+            </p>
           </div>
         </div>
 
-        {/* Right Column: statistics and results */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', flex: 1 }}>
+        <div className="cobuy-results-hero-right">
+          <div className="cobuy-dataset-pill" title="Active dataset producing these insights">
+            <Calendar size={14} style={{ color: 'var(--primary-color)' }} />
+            <span>{activeDatasetName || file?.name || (datasetId ? `Dataset #${datasetId}` : 'Store Sales Data')}</span>
+          </div>
 
-          <>
-            {/* What's In Customers' Carts */}
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: '320px', maxHeight: '420px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
-                  <Database size={18} style={{ color: 'var(--primary-color)' }} /> What's In Customers' Carts
-                  <span className="tooltip-container" style={{ display: 'inline-flex', alignItems: 'center', marginLeft: '0.25rem' }}>
-                    <button
-                      onClick={() => {
-                        const nextState = !showCartDesc;
-                        setShowCartDesc(nextState);
-                        sessionStorage.setItem('show_cart_desc', nextState ? 'true' : 'false');
-                      }}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: showCartDesc ? 'var(--primary-color)' : 'var(--text-dim)',
-                        cursor: 'pointer',
-                        padding: '4px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        borderRadius: '50%',
-                        transition: 'all 0.2s ease',
-                      }}
-                      aria-label="Toggle description"
-                    >
-                      <HelpCircle size={16} />
-                    </button>
-                    <span className="tooltip-text" style={{ width: '140px', textAlign: 'center', bottom: '135%' }}>
-                      {showCartDesc ? 'Hide Description' : 'Show Description'}
-                    </span>
-                  </span>
-                </h3>
-                <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '600' }}>
-                  {results ? `Items: ${stats.unique_items_count} | Purchases: ${stats.total_transactions}` : 'Run algorithm to view data'}
-                </span>
-              </div>
+          <button
+            type="button"
+            className="cobuy-new-analysis-btn"
+            onClick={() => setForceSetupView(true)}
+            title="Upload or analyze another dataset"
+          >
+            <RotateCcw size={13} />
+            <span>New Analysis</span>
+          </button>
 
-              {showCartDesc && (
-                <div
-                  className="fade-in"
-                  style={{
-                    background: 'rgba(255, 255, 255, 0.02)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '6px',
-                    padding: '0.5rem 0.75rem',
-                    marginBottom: '0.75rem',
-                    fontSize: '0.75rem',
-                    color: 'var(--text-muted)',
-                    lineHeight: '1.4'
-                  }}
-                >
-                  💡 <strong>What is How Often Bought?</strong> This shows how often a product makes it into a customer's shopping cart. Click any product row to view items frequently bought together with it.
-                </div>
-              )}
-
-              {/* Card Main Body Layout */}
-              <div style={{ display: 'flex', gap: '1rem', flex: 1, minHeight: 0 }}>
-
-                {/* Left Panel: Product List with Clickable Rows */}
-                <div style={{ flex: '1 1 50%', display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
-                  <div style={{ position: 'relative', marginBottom: '0.5rem' }}>
-                    <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
-                    <input
-                      type="text"
-                      placeholder="Search"
-                      className="input"
-                      style={{ paddingLeft: '30px', paddingItem: '0.4rem', fontSize: '0.85rem', height: '34px' }}
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      disabled={!results || !stats.all_items || stats.all_items.length === 0}
-                    />
-                  </div>
-
-                  <div style={{
-                    flex: 1,
-                    overflowY: 'auto',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '8px',
-                    background: 'rgba(0, 0, 0, 0.1)',
-                    display: (!results || !stats.all_items || stats.all_items.length === 0 || filteredItems.length === 0) ? 'flex' : 'block',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
-                    {!results ? (
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', textAlign: 'center', padding: '1.5rem', fontStyle: 'italic' }}>
-                        No Data (Run algorithm to view customer cart frequency)
-                      </div>
-                    ) : !stats.all_items || stats.all_items.length === 0 ? (
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', textAlign: 'center', padding: '1.5rem', fontStyle: 'italic' }}>
-                        No products found in this dataset
-                      </div>
-                    ) : filteredItems.length === 0 ? (
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '130px', padding: '1.5rem', textAlign: 'center' }}>
-                        No matching products found.
-                      </div>
-                    ) : (
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                        <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--card-bg, #1e222d)' }}>
-                          <tr style={{ background: 'rgba(255, 255, 255, 0.04)', borderBottom: '1px solid var(--border-color)' }}>
-                            <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)' }}>Product Name</th>
-                            <th style={{ textAlign: 'right', padding: '0.5rem 0.75rem', fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)' }}>How Often Bought</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredItems.map(item => {
-                            const isSelected = selectedProduct === item.name;
-                            return (
-                              <tr
-                                key={item.name}
-                                onClick={() => handleSelectProduct(item.name)}
-                                style={{
-                                  borderBottom: '1px solid rgba(255, 255, 255, 0.02)',
-                                  cursor: 'pointer',
-                                  background: isSelected ? 'rgba(59, 130, 246, 0.18)' : 'transparent',
-                                  borderLeft: isSelected ? '3px solid var(--primary-color)' : '3px solid transparent',
-                                  transition: 'all 0.15s ease'
-                                }}
-                                onMouseEnter={(e) => {
-                                  if (!isSelected) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
-                                }}
-                                onMouseLeave={(e) => {
-                                  if (!isSelected) e.currentTarget.style.background = 'transparent';
-                                }}
-                              >
-                                <td style={{ padding: '0.45rem 0.75rem', fontWeight: isSelected ? '700' : '600', color: isSelected ? '#3b82f6' : '#fff' }}>
-                                  {item.name}
-                                </td>
-                                <td className="mono" style={{ textAlign: 'right', padding: '0.45rem 0.75rem', color: 'var(--text-muted)' }}>
-                                  <strong style={{ color: isSelected ? '#3b82f6' : '#fff', fontWeight: '700' }}>{(item.support * 100).toFixed(1)}%</strong>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                </div>
-
-                {/* Right Panel: Frequently Bought Together Table Container */}
-                <div style={{
-                  flex: '1 1 50%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  minWidth: 0,
-                  minHeight: 0,
-                  borderLeft: '1px solid var(--border-color)',
-                  paddingLeft: '1rem'
-                }}>
-                  {!results ? (
-                    <div style={{
-                      flex: 1,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '1.5rem',
-                      textAlign: 'center',
-                      border: '1px dashed var(--border-color)',
-                      borderRadius: '8px',
-                      background: 'rgba(0, 0, 0, 0.05)',
-                      color: 'var(--text-dim)'
-                    }}>
-                      <ShoppingCart size={28} style={{ color: 'var(--primary-color)', opacity: 0.6, marginBottom: '0.5rem' }} />
-                      <div style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                        Frequently Bought Together
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', maxWidth: '210px' }}>
-                        Run algorithm to explore frequently bought together items.
-                      </div>
-                    </div>
-                  ) : !selectedProduct ? (
-                    <div style={{
-                      flex: 1,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '1.5rem',
-                      textAlign: 'center',
-                      border: '1px dashed var(--border-color)',
-                      borderRadius: '8px',
-                      background: 'rgba(0, 0, 0, 0.05)',
-                      color: 'var(--text-dim)'
-                    }}>
-                      <ShoppingCart size={28} style={{ color: 'var(--primary-color)', opacity: 0.6, marginBottom: '0.5rem' }} />
-                      <div style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                        Frequently Bought Together
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', maxWidth: '210px' }}>
-                        Click any product in the left table to reveal items co-purchased with it.
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                        <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#fff', display: 'flex', alignItems: 'center', gap: '0.4rem', overflow: 'hidden' }}>
-                          <ShoppingCart size={15} style={{ color: 'var(--primary-color)', flexShrink: 0 }} />
-                          <span style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                            Frequently Bought Together with <span style={{ color: 'var(--primary-color)' }}>{selectedProduct}</span>
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => { setSelectedProduct(null); setCoBoughtResults([]); }}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: 'var(--text-muted)',
-                            cursor: 'pointer',
-                            padding: '2px 4px',
-                            borderRadius: '4px',
-                            display: 'flex',
-                            alignItems: 'center'
-                          }}
-                          title="Clear selection"
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-
-                      {/* Scrollable container with vertical right-side scrollbar */}
-                      <div style={{
-                        flex: 1,
-                        overflowY: 'auto',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '8px',
-                        background: 'rgba(0, 0, 0, 0.1)',
-                        minHeight: 0
-                      }}>
-                        {loadingCoBought ? (
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', textAlign: 'center', padding: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                            <RefreshCw size={14} className="spin" /> Calculating co-occurrences...
-                          </div>
-                        ) : coBoughtResults.length === 0 ? (
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', textAlign: 'center', padding: '1.5rem', fontStyle: 'italic' }}>
-                            No associated products found for "{selectedProduct}" in this dataset.
-                          </div>
-                        ) : (
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                            <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--card-bg, #1e222d)' }}>
-                              <tr style={{ background: 'rgba(255, 255, 255, 0.04)', borderBottom: '1px solid var(--border-color)' }}>
-                                <th style={{ textAlign: 'center', padding: '0.5rem 0.5rem', fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', width: '30px' }}>#</th>
-                                <th style={{ textAlign: 'left', padding: '0.5rem 0.75rem', fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)' }}>Product Name</th>
-                                <th style={{ textAlign: 'right', padding: '0.5rem 0.75rem', fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)' }}>How many times they bought together</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {coBoughtResults.map((item, idx) => (
-                                <tr key={item.product_name} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.02)' }}>
-                                  <td style={{ textAlign: 'center', padding: '0.45rem 0.5rem', color: 'var(--text-muted)', fontWeight: '600', fontSize: '0.75rem' }}>{idx + 1}</td>
-                                  <td style={{ padding: '0.45rem 0.75rem', fontWeight: '600', color: '#fff' }}>{item.product_name}</td>
-                                  <td className="mono" style={{ textAlign: 'right', padding: '0.45rem 0.75rem', color: 'var(--text-muted)' }}>
-                                    <strong style={{ color: 'var(--primary-color)', fontWeight: '700' }}>{item.count}</strong>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-              </div>
-            </div>
-
-            {/* Lower Panel: Rules Mining Results */}
-            <div className="card" style={{ height: '600px', display: 'flex', flexDirection: 'column' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <Zap size={24} style={{ color: 'var(--primary-color)' }} />
-                  <h3 style={{ fontSize: '1.25rem', fontWeight: '700', color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    Analysis Insights & Recommendations
-                    <span className="tooltip-container" style={{ display: 'inline-flex', alignItems: 'center', marginLeft: '0.4rem' }}>
-                      <button
-                        onClick={() => {
-                          setShowMiningModal(true);
-                        }}
-                        style={{
-                          background: 'var(--inner-box-bg)',
-                          border: '1px solid var(--border-color)',
-                          color: 'var(--text-muted)',
-                          cursor: 'pointer',
-                          width: '28px',
-                          height: '28px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          borderRadius: '50%',
-                          transition: 'all 0.2s ease',
-                          padding: 0
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.color = 'var(--primary-color)';
-                          e.currentTarget.style.borderColor = 'var(--primary-color)';
-                          e.currentTarget.style.transform = 'scale(1.1)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.color = 'var(--text-muted)';
-                          e.currentTarget.style.borderColor = 'var(--border-color)';
-                          e.currentTarget.style.transform = 'scale(1)';
-                        }}
-                        aria-label="View computation & mining explanation"
-                        title="Click to view exact computation & mining algorithm details"
-                      >
-                        <HelpCircle size={16} />
-                      </button>
-                      <span className="tooltip-text" style={{ width: '170px', textAlign: 'center', bottom: '135%' }}>
-                        How Computation Works
-                      </span>
-                    </span>
-                  </h3>
-                </div>
-              </div>
-
-              {/* Contextual Explanation Block */}
-              {showAnalysisDesc && (
-                activeSubTab === 'recommendations' ? (
-                  <div style={{
-                    background: 'rgba(255, 255, 255, 0.02)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '8px',
-                    padding: '0.75rem 1rem',
-                    marginBottom: '1.25rem',
-                    fontSize: '0.8rem',
-                    color: 'var(--text-muted)',
-                    lineHeight: '1.5'
-                  }}>
-                    💡 <strong>What is How Likely?</strong> How Likely tells you how likely a customer is to buy a second product if they have already decided to buy a first product.
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.25rem' }}>
-                    <div style={{
-                      background: 'rgba(255, 255, 255, 0.02)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '8px',
-                      padding: '0.75rem 1rem',
-                      fontSize: '0.8rem',
-                      color: 'var(--text-muted)',
-                      lineHeight: '1.5'
-                    }}>
-                      💡 <strong>What is a Common Item Combo?</strong> A Common Item Combo is a group of products regularly bought together in a single shopping visit.
-                    </div>
-                    <div style={{
-                      background: 'rgba(255, 255, 255, 0.02)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '8px',
-                      padding: '0.75rem 1rem',
-                      fontSize: '0.8rem',
-                      color: 'var(--text-muted)',
-                      lineHeight: '1.5'
-                    }}>
-                      💡 <strong>What is an N-Item Set?</strong> An N-item set is simply the number of products in that group (for example, a 1-item set contains single products, and a 2-item set contains pairs of products).
-                    </div>
-                  </div>
-                )
-              )}
-
-              {/* Sub Tab Selector with Search Bar */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-                <div style={{ display: 'flex', gap: '1.5rem' }}>
-                  <button
-                    onClick={() => setActiveSubTab('recommendations')}
-                    style={{
-                      padding: '0.75rem 0.5rem',
-                      border: 'none',
-                      background: 'transparent',
-                      color: activeSubTab === 'recommendations' ? 'var(--primary-color)' : 'var(--text-muted)',
-                      borderBottom: activeSubTab === 'recommendations' ? '2px solid var(--primary-color)' : 'none',
-                      fontWeight: '700',
-                      cursor: 'pointer',
-                      fontSize: '0.9rem',
-                      outline: 'none'
-                    }}
-                  >
-                    Recommendations ({filteredConsolidatedRules.length})
-                  </button>
-                  <button
-                    onClick={() => setActiveSubTab('itemsets')}
-                    style={{
-                      padding: '0.75rem 0.5rem',
-                      border: 'none',
-                      background: 'transparent',
-                      color: activeSubTab === 'itemsets' ? 'var(--primary-color)' : 'var(--text-muted)',
-                      borderBottom: activeSubTab === 'itemsets' ? '2px solid var(--primary-color)' : 'none',
-                      fontWeight: '700',
-                      cursor: 'pointer',
-                      fontSize: '0.9rem',
-                      outline: 'none'
-                    }}
-                  >
-                    Common Item Combos ({totalFilteredItemsetsCount})
-                  </button>
-                </div>
-
-                {/* Recommendations Search Bar */}
-                <div style={{ position: 'relative', width: '250px', marginBottom: '0.4rem' }}>
-                  <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
-                  <input
-                    type="text"
-                    placeholder="Search product recommendations..."
-                    className="input"
-                    style={{ paddingLeft: '30px', paddingRight: '28px', fontSize: '0.85rem', height: '34px', width: '100%' }}
-                    value={recommendationSearchTerm}
-                    onChange={(e) => setRecommendationSearchTerm(e.target.value)}
-                    disabled={!results}
-                  />
-                  {recommendationSearchTerm && (
-                    <button
-                      onClick={() => setRecommendationSearchTerm('')}
-                      style={{
-                        position: 'absolute',
-                        right: '8px',
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--text-muted)',
-                        cursor: 'pointer',
-                        padding: '2px',
-                        display: 'flex',
-                        alignItems: 'center'
-                      }}
-                      title="Clear search"
-                    >
-                      <X size={13} />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div style={{
-                flex: 1,
-                overflowY: 'auto',
-                border: '1px solid var(--border-color)',
-                borderRadius: '8px',
-                background: 'rgba(0, 0, 0, 0.1)',
-                display: (!results || (activeSubTab === 'recommendations' && filteredConsolidatedRules.length === 0) || (activeSubTab === 'itemsets' && filteredGroupedSets.length === 0)) ? 'flex' : 'block',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                alignItems: 'center'
-              }}>
-                {!results ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3rem', textAlign: 'center' }}>
-                    <Database size={28} style={{ color: 'var(--text-dim)', marginBottom: '1rem' }} />
-                    <h4 style={{ fontSize: '1rem', fontWeight: '600', color: '#fff', marginBottom: '0.5rem' }}>No Analysis Insights Generated</h4>
-                    <p style={{ color: 'var(--text-muted)', maxWidth: '400px', fontSize: '0.85rem', fontStyle: 'italic' }}>
-                      Run the algorithm using the button at the top right to process the dataset and generate rules/itemsets.
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    {activeSubTab === 'recommendations' && (
-                      <>
-                        {filteredConsolidatedRules.length > 0 ? (
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                            <thead>
-                              <tr style={{ background: 'rgba(255, 255, 255, 0.02)', borderBottom: '1px solid var(--border-color)' }}>
-                                <th style={{ textAlign: 'left', padding: '1rem', fontWeight: '600', color: 'var(--text-muted)', width: '20%' }}>Frequently Bought Together</th>
-                                <th style={{ textAlign: 'left', padding: '1rem', fontWeight: '600', color: 'var(--text-muted)', width: '20%' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                    Buying Pattern
-                                    <div className="tooltip-container">
-                                      <Info size={14} style={{ color: 'var(--text-dim)' }} />
-                                      <span className="tooltip-text">
-                                        "A → B" means customers who buy A are also likely to buy B.
-                                      </span>
-                                    </div>
-                                  </div>
-                                </th>
-                                <th style={{ textAlign: 'center', padding: '1rem', fontWeight: '600', color: 'var(--text-muted)', width: '15%' }}>How Likely</th>
-                                <th style={{ textAlign: 'left', padding: '1rem', fontWeight: '600', color: 'var(--text-muted)', width: '25%' }}>Explanation & Details</th>
-                                <th style={{ textAlign: 'left', padding: '1rem', fontWeight: '600', color: 'var(--text-muted)', width: '20%' }}>Suggested Action</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {filteredConsolidatedRules.map((suggestion, idx) => {
-                                const confidencePct = (suggestion.confidence * 100).toFixed(1);
-                                const isHighConfidence = suggestion.confidence >= 0.8;
-                                const isMediumConfidence = suggestion.confidence >= 0.5 && suggestion.confidence < 0.8;
-                                const isFlexible = suggestion.tieMode === 'flexible';
-
-                                let confidenceColor = '#ef4444';
-                                if (isHighConfidence) confidenceColor = '#10b981';
-                                else if (isMediumConfidence) confidenceColor = '#f59e0b';
-
-                                const marketType = results?.metrics?.adaptive_thresholds?.market_type || 'Default/unknown';
-                                const anchor = suggestion.antecedents.join(', ');
-                                const actionCategory = isHighConfidence ? 'bundle' : isMediumConfidence ? 'cross_promo' : 'placement';
-                                const action = getSuggestedAction(actionCategory, marketType, anchor, suggestion);
-                                // Flexible rows use amber accent to signal optionality
-                                const actionBorderColor = isFlexible ? '#f59e0b' : confidenceColor;
-
-                                return (
-                                  <tr key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', transition: 'background 0.2s', opacity: suggestion.isLowCoherence ? 0.75 : 1 }}>
-
-                                    {/* ── Frequently Bought Together ─────────────────────── */}
-                                    <td style={{ padding: '1rem' }}>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                        {suggestion.antecedents.map(item => (
-                                          <span key={item} style={{ fontWeight: '600', color: '#fff', background: 'rgba(255,255,255,0.05)', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
-                                            {item}
-                                          </span>
-                                        ))}
-                                        {isFlexible ? (
-                                          suggestion.tieItems.map((tieItem, ti) => (
-                                            <React.Fragment key={tieItem + ti}>
-                                              <span style={{ color: 'var(--text-dim)', fontSize: '0.72rem', fontStyle: 'italic' }}>
-                                                {ti === 0 ? '+' : 'or'}
-                                              </span>
-                                              <span style={{ fontWeight: '600', color: 'var(--primary-color)', background: 'rgba(229, 115, 77, 0.1)', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
-                                                {tieItem}
-                                              </span>
-                                            </React.Fragment>
-                                          ))
-                                        ) : (
-                                          <>
-                                            <span style={{ color: 'var(--text-dim)' }}>+</span>
-                                            {suggestion.consequents.map(item => (
-                                              <span key={item} style={{ fontWeight: '600', color: 'var(--primary-color)', background: 'rgba(229, 115, 77, 0.1)', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
-                                                {item}
-                                              </span>
-                                            ))}
-                                          </>
-                                        )}
-                                      </div>
-                                      {isFlexible && (
-                                        <span style={{
-                                          display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
-                                          marginTop: '0.4rem', fontSize: '0.65rem', fontWeight: '700',
-                                          color: '#f59e0b', background: 'rgba(245,158,11,0.1)',
-                                          padding: '0.15rem 0.45rem', borderRadius: '3px', letterSpacing: '0.05em'
-                                        }}>
-                                          ⚡ Flexible Choice
-                                        </span>
-                                      )}
-                                    </td>
-
-                                    {/* ── Buying Pattern ────────────────────────────────── */}
-                                    <td style={{ padding: '1rem' }}>
-                                      {isFlexible ? (
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', fontWeight: '700' }}>
-                                          <span style={{ color: '#fff' }}>{anchor}</span>
-                                          <span style={{ color: 'var(--primary-color)' }}>→</span>
-                                          <span style={{ color: '#fff', fontStyle: 'italic', fontWeight: '500', fontSize: '0.8rem' }}>
-                                            {suggestion.tieItems.join(' or ')}
-                                          </span>
-                                        </div>
-                                      ) : (
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', fontWeight: '700' }}>
-                                          <span style={{ color: '#fff' }}>{anchor}</span>
-                                          <span style={{ color: 'var(--primary-color)' }}>→</span>
-                                          <span style={{ color: '#fff' }}>{suggestion.consequents.join(', ')}</span>
-                                        </div>
-                                      )}
-                                    </td>
-
-                                    {/* ── How Likely ────────────────────────────────────── */}
-                                    <td style={{ padding: '1rem', textAlign: 'center' }}>
-                                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
-                                        <span style={{ fontWeight: '700', fontSize: '1rem', color: confidenceColor }}>
-                                          {confidencePct}%
-                                        </span>
-                                        <div style={{ width: '100%', background: 'rgba(255,255,255,0.05)', height: '4px', borderRadius: '2px', overflow: 'hidden' }}>
-                                          <div style={{ width: `${confidencePct}%`, height: '100%', background: confidenceColor }} />
-                                        </div>
-                                      </div>
-                                    </td>
-
-                                    {/* ── Explanation & Details ─────────────────────────── */}
-                                    <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>
-
-                                      {/* #1 Plain-language count sentence */}
-                                      <div style={{ fontSize: '0.8rem', lineHeight: '1.4' }}>
-                                        {isFlexible ? (
-                                          suggestion.ant_tx_count != null && suggestion.rule_tx_count != null ? (
-                                            <>Out of{' '}
-                                              <span style={{ color: '#fff', fontWeight: '700' }}>{suggestion.ant_tx_count.toLocaleString()}</span>{' '}
-                                              customers who bought{' '}
-                                              <span style={{ color: '#fff', fontWeight: '600' }}>{anchor}</span>,{' '}
-                                              <span style={{ color: confidenceColor, fontWeight: '700' }}>{suggestion.rule_tx_count.toLocaleString()}</span>{' '}
-                                              also purchased one of{' '}
-                                              <span style={{ color: 'var(--primary-color)', fontWeight: '600' }}>{suggestion.tieItems.join(' or ')}</span>.
-                                            </>
-                                          ) : (
-                                            <>Out of every 100 customers who bought{' '}
-                                              <span style={{ color: '#fff', fontWeight: '600' }}>{anchor}</span>, about{' '}
-                                              <span style={{ color: confidenceColor, fontWeight: '700' }}>{Math.round(Number(confidencePct))}</span>{' '}
-                                              also purchased one of{' '}
-                                              <span style={{ color: 'var(--primary-color)', fontWeight: '600' }}>{suggestion.tieItems.join(' or ')}</span>.
-                                            </>
-                                          )
-                                        ) : (
-                                          suggestion.ant_tx_count != null && suggestion.rule_tx_count != null ? (
-                                            <>Out of{' '}
-                                              <span style={{ color: '#fff', fontWeight: '700' }}>{suggestion.ant_tx_count.toLocaleString()}</span>{' '}
-                                              customers who bought{' '}
-                                              <span style={{ color: '#fff', fontWeight: '600' }}>{anchor}</span>,{' '}
-                                              <span style={{ color: confidenceColor, fontWeight: '700' }}>{suggestion.rule_tx_count.toLocaleString()}</span>{' '}
-                                              also purchased{' '}
-                                              <span style={{ color: 'var(--primary-color)', fontWeight: '600' }}>{suggestion.consequents.join(', ')}</span>.
-                                            </>
-                                          ) : (
-                                            <>Out of every 100 customers who bought{' '}
-                                              <span style={{ color: '#fff', fontWeight: '600' }}>{anchor}</span>, about{' '}
-                                              <span style={{ color: confidenceColor, fontWeight: '700' }}>{Math.round(Number(confidencePct))}</span>{' '}
-                                              also purchased{' '}
-                                              <span style={{ color: 'var(--primary-color)', fontWeight: '600' }}>{suggestion.consequents.join(', ')}</span>.
-                                            </>
-                                          )
-                                        )}
-                                      </div>
-
-                                      {/* #3 Baseline comparison sentence */}
-                                      {suggestion.consequent_baseline_rate != null && (
-                                        <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', lineHeight: '1.35', color: 'var(--text-dim)' }}>
-                                          <span style={{ color: 'var(--primary-color)', fontWeight: '600' }}>
-                                            {isFlexible ? suggestion.tieItems[0] : suggestion.consequents.join(', ')}
-                                          </span>{' '}
-                                          is normally in{' '}
-                                          <strong style={{ color: '#fff' }}>{(suggestion.consequent_baseline_rate * 100).toFixed(1)}%</strong>{' '}
-                                          of all transactions — jumps to{' '}
-                                          <strong style={{ color: confidenceColor }}>{confidencePct}%</strong>{' '}
-                                          when{' '}
-                                          <span style={{ color: '#fff', fontWeight: '600' }}>{anchor}</span>{' '}is bought.
-                                        </div>
-                                      )}
-
-                                      {/* More Details toggle */}
-                                      <button
-                                        onClick={() => toggleRuleExpand(idx)}
-                                        style={{
-                                          background: 'transparent',
-                                          border: 'none',
-                                          color: 'var(--primary-color)',
-                                          cursor: 'pointer',
-                                          fontSize: '0.75rem',
-                                          fontWeight: '600',
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          gap: '0.2rem',
-                                          padding: 0,
-                                          marginTop: '0.5rem',
-                                          outline: 'none'
-                                        }}
-                                      >
-                                        {expandedRules[idx] ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                                        {expandedRules[idx] ? 'Less Details' : 'More Details'}
-                                      </button>
-
-                                      {/* Expanded details panel */}
-                                      {expandedRules[idx] && (
-                                        <div style={{
-                                          marginTop: '0.5rem',
-                                          padding: '0.6rem 0.75rem',
-                                          background: 'rgba(255, 255, 255, 0.02)',
-                                          borderRadius: '6px',
-                                          fontSize: '0.75rem',
-                                          border: '1px solid var(--border-color)',
-                                          color: 'var(--text-muted)',
-                                          lineHeight: '1.6'
-                                        }}>
-
-                                          {/* Lift / per-alternative breakdown (unchanged) */}
-                                          {isFlexible ? (
-                                            suggestion.allTiedRules.map((tr, ti) => (
-                                              <div key={ti} style={{ marginBottom: ti < suggestion.allTiedRules.length - 1 ? '0.4rem' : 0 }}>
-                                                <strong style={{ color: '#fff' }}>{tr.consequents.join(', ')}</strong>
-                                                {' — '}Link Strength: {tr.lift.toFixed(2)}×
-                                                &nbsp;|&nbsp;
-                                                Confidence: {(tr.confidence * 100).toFixed(1)}%
-                                              </div>
-                                            ))
-                                          ) : (
-                                            <>
-                                              <strong style={{ color: '#fff' }}>How Strong the Link Is: {suggestion.lift.toFixed(2)}</strong>
-                                              <div style={{ marginTop: '0.2rem' }}>
-                                                Customers buy these products together {suggestion.lift.toFixed(2)} times more often than expected.
-                                              </div>
-                                            </>
-                                          )}
-
-                                          {/* #4 Revenue estimate */}
-                                          {suggestion.has_revenue_data && suggestion.avg_rule_basket != null && (
-                                            <div style={{
-                                              marginTop: '0.65rem',
-                                              padding: '0.45rem 0.6rem',
-                                              background: 'rgba(16,185,129,0.06)',
-                                              border: '1px solid rgba(16,185,129,0.2)',
-                                              borderRadius: '5px',
-                                              lineHeight: '1.5'
-                                            }}>
-                                              <div style={{ color: '#10b981', fontWeight: '700', marginBottom: '0.2rem' }}>💰 Revenue Signal</div>
-                                              <div>
-                                                Avg. basket value for these co-purchases:{' '}
-                                                <strong style={{ color: '#fff' }}>${suggestion.avg_rule_basket.toFixed(2)}</strong>
-                                              </div>
-                                              {suggestion.monthly_estimate != null ? (
-                                                <div>
-                                                  Based on{' '}
-                                                  <strong style={{ color: '#fff' }}>{suggestion.rule_tx_count}</strong>{' '}
-                                                  matching transactions, this pattern relates to an estimated{' '}
-                                                  <strong style={{ color: '#10b981' }}>${Math.round(suggestion.monthly_estimate).toLocaleString()}/month</strong>{' '}
-                                                  in historical sales ({results?.metrics?.date_range_days}-day data window).
-                                                </div>
-                                              ) : (
-                                                <div>
-                                                  This pattern appeared in{' '}
-                                                  <strong style={{ color: '#fff' }}>{suggestion.rule_tx_count}</strong>{' '}
-                                                  historical transaction{suggestion.rule_tx_count !== 1 ? 's' : ''} (no date column — monthly extrapolation unavailable).
-                                                </div>
-                                              )}
-                                              <div style={{ fontStyle: 'italic', opacity: 0.65, marginTop: '0.25rem', fontSize: '0.7rem' }}>
-                                                Historical estimate based on uploaded data — not a sales forecast.
-                                              </div>
-                                            </div>
-                                          )}
-
-                                        </div>
-                                      )}
-                                    </td>
-
-                                    {/* ── Suggested Action ──────────────────────────────── */}
-                                    <td style={{ padding: '1rem' }}>
-                                      <div style={{
-                                        background: 'rgba(255, 255, 255, 0.03)',
-                                        padding: '0.75rem',
-                                        borderRadius: '6px',
-                                        borderLeft: `3px solid ${actionBorderColor}`,
-                                        fontSize: '0.8rem',
-                                        lineHeight: '1.4',
-                                        color: '#fff'
-                                      }}>
-                                        {action}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        ) : (
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '3rem', textAlign: 'center' }}>
-                            <Database size={28} style={{ color: 'var(--text-dim)', marginBottom: '1rem' }} />
-                            <h4 style={{ fontSize: '1rem', fontWeight: '600', color: '#fff', marginBottom: '0.5rem' }}>No Product Recommendations Found</h4>
-                            <p style={{ color: 'var(--text-muted)', maxWidth: '480px', fontSize: '0.85rem' }}>
-                              {results?.message || "No statistically significant buying patterns could be discovered in this dataset, even after relaxing thresholds to the minimum floor (support 0.01%, confidence 2%). This typically occurs when there are too few transactions or high product variety without repeated co-purchases."}
-                            </p>
-                          </div>
-                        )}
-                      </>
-                    )}
-
-                    {activeSubTab === 'itemsets' && (
-                      <>
-                        {filteredGroupedSets.length > 0 ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.50rem', padding: '0.5rem' }}>
-                            {filteredGroupedSets.map(group => (
-                              <div key={group.size} style={{
-                                border: '1px solid var(--border-color)',
-                                borderRadius: '8px',
-                                background: 'rgba(255, 255, 255, 0.01)',
-                                overflow: 'hidden'
-                              }}>
-                                {/* Group Header */}
-                                <div
-                                  onClick={() => toggleGroupCollapse(group.size)}
-                                  style={{
-                                    background: 'rgba(255, 255, 255, 0.03)',
-                                    padding: '0.75rem 1rem',
-                                    borderBottom: collapsedGroups[group.size] === false ? '1px solid var(--border-color)' : 'none',
-                                    fontWeight: '700',
-                                    color: 'var(--primary-color)',
-                                    fontSize: '0.9rem',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                    cursor: 'pointer',
-                                    userSelect: 'none',
-                                    transition: 'background 0.2s'
-                                  }}
-                                >
-                                  <span>{group.label} ({group.items.length})</span>
-                                  <span style={{ display: 'flex', alignItems: 'center', color: 'var(--text-muted)' }}>
-                                    {collapsedGroups[group.size] !== false ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
-                                  </span>
-                                </div>
-
-                                {/* Table */}
-                                {collapsedGroups[group.size] === false && (
-                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                                    <thead>
-                                      <tr style={{ background: 'rgba(255, 255, 255, 0.01)', borderBottom: '1px solid var(--border-color)' }}>
-                                        <th style={{ textAlign: 'left', padding: '0.75rem 1rem', fontWeight: '600', color: 'var(--text-muted)' }}>Common Item Combo</th>
-                                        <th style={{ textAlign: 'right', padding: '0.75rem 1rem', fontWeight: '600', color: 'var(--text-muted)' }}>Qty</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {group.items.map((set, idx) => {
-                                        const count = Math.round(set.support * (stats.total_transactions || 0));
-                                        return (
-                                          <tr key={idx} style={{ borderBottom: idx < group.items.length - 1 ? '1px solid rgba(255, 255, 255, 0.03)' : 'none', opacity: set.isLowCoherence ? 0.75 : 1 }}>
-                                            <td style={{ padding: '0.75rem 1rem' }}>
-                                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                                {set.items.map(item => (
-                                                  <span key={item} style={{ fontWeight: '600', color: '#fff', background: 'rgba(255,255,255,0.05)', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
-                                                    {item}
-                                                  </span>
-                                                ))}
-                                              </div>
-                                              {set.isLowCoherence && (
-                                                <div style={{
-                                                  display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
-                                                  background: 'rgba(245,158,11,0.08)',
-                                                  border: '1px solid rgba(245,158,11,0.35)',
-                                                  borderRadius: '4px',
-                                                  padding: '0.2rem 0.5rem',
-                                                  marginTop: '0.4rem',
-                                                  fontSize: '0.7rem',
-                                                  color: '#f59e0b'
-                                                }}>
-                                                  <span>⚠</span>
-                                                  <span>Unusual combination ({Math.round((set.coherenceScore || 0) * 100)}% category coherence)</span>
-                                                </div>
-                                              )}
-                                            </td>
-                                            <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '700', color: 'var(--primary-color)' }}>
-                                              {count} times
-                                            </td>
-                                          </tr>
-                                        );
-                                      })}
-                                    </tbody>
-                                  </table>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '3rem', textAlign: 'center' }}>
-                            <Database size={28} style={{ color: 'var(--text-dim)', marginBottom: '1rem' }} />
-                            <h4 style={{ fontSize: '1rem', fontWeight: '600', color: '#fff', marginBottom: '0.5rem' }}>No Common Item Combos Found</h4>
-                            <p style={{ color: 'var(--text-muted)', maxWidth: '480px', fontSize: '0.85rem' }}>
-                              {results?.message || "No common item combinations were found above the minimum statistical noise floor (0.01% support). Try uploading a larger dataset with more repeated transactions."}
-                            </p>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          </>
+          <button
+            type="button"
+            className="cobuy-new-analysis-btn"
+            onClick={() => setShowParamsModal(true)}
+            title="Adjust algorithm thresholds"
+            style={{ background: 'var(--inner-box-bg)', color: 'var(--text-muted)' }}
+          >
+            <Sliders size={13} />
+            <span>Parameters</span>
+          </button>
         </div>
       </div>
 
-      {/* Association Rule & Mining Engine Computation Modal */}
-      {showMiningModal && (
+      {/* System Warning / Alert Banners */}
+      {duplicateNotice && (
         <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.78)',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
+          background: '#fef3c7',
+          border: '1px solid #fde68a',
+          color: '#92400e',
+          padding: '0.75rem 1rem',
+          borderRadius: '10px',
+          fontSize: '0.82rem',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999,
-          padding: '1.5rem'
-        }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowMiningModal(false);
-          }}>
-          <div className="card fade-in" style={{
-            maxWidth: '840px',
-            width: '100%',
-            maxHeight: '90vh',
-            overflowY: 'auto',
-            background: 'var(--card-bg)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '22px',
-            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
-            padding: '2.3rem',
-            position: 'relative'
-          }}>
-            {/* Modal Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.75rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1.25rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
-                <div style={{ width: 46, height: 46, borderRadius: '13px', background: 'var(--sidebar-active-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary-color)' }}>
-                  <Cpu size={26} />
-                </div>
-                <div>
-                  <h2 style={{ fontSize: '1.48rem', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
-                    How the Mining Engine Computation Works
-                  </h2>
-                  <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', margin: '0.2rem 0 0' }}>
-                    Mathematical & algorithmic deep-dive (`Apriori / FP-Growth` Association Rule Mining)
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowMiningModal(false)}
-                style={{
-                  background: 'var(--inner-box-bg)',
-                  border: '1px solid var(--border-color)',
-                  color: 'var(--text-muted)',
-                  width: 36,
-                  height: 36,
-                  borderRadius: '10px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer'
-                }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Core Algorithm Overview */}
-            <div style={{
-              background: 'var(--sidebar-active-bg)',
-              border: '1px solid rgba(99, 102, 241, 0.22)',
-              borderRadius: '14px',
-              padding: '1.35rem 1.6rem',
-              marginBottom: '1.8rem'
-            }}>
-              <h4 style={{ fontSize: '1.08rem', fontWeight: '700', color: 'var(--primary-color)', margin: '0 0 0.6rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Layers size={19} /> The Mining Computation Workflow
-              </h4>
-              <p style={{ fontSize: '0.95rem', color: 'var(--text-main)', lineHeight: '1.65', margin: '0 0 0.8rem' }}>
-                When you click <strong>Run Algorithm</strong>, our backend Python engine reads all customer receipts (`transactions`) from your active dataset and performs a multi-stage data mining process:
-              </p>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
-                <div style={{ background: 'var(--inner-box-bg)', padding: '1rem', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontWeight: '700', color: 'var(--text-main)', fontSize: '0.95rem', marginBottom: '0.3rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <span style={{ color: 'var(--primary-color)' }}>●</span> Apriori Engine (`Bottom-Up Level Search`)
-                  </div>
-                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0, lineHeight: '1.5' }}>
-                    Repeatedly scans the database level-by-level (`1-item sets → 2-item pairs → 3-item combos`). Immediately prunes any combination whose frequency falls below the min support floor (`Downward Closure Property`).
-                  </p>
-                </div>
-                <div style={{ background: 'var(--inner-box-bg)', padding: '1rem', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontWeight: '700', color: 'var(--text-main)', fontSize: '0.95rem', marginBottom: '0.3rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <span style={{ color: 'var(--accent-color)' }}>●</span> FP-Growth Engine (`Prefix-Tree Compression`)
-                  </div>
-                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0, lineHeight: '1.5' }}>
-                    Compresses the entire transaction history into an in-memory <strong>FP-Tree</strong> in just 2 scans. Extracts frequent item patterns without generating millions of candidate pairs (`Up to 100x faster`).
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* The 3 Mathematical Filters */}
-            <h3 style={{ fontSize: '1.18rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Zap size={19} style={{ color: 'var(--accent-color)' }} /> The 3 Key Threshold Filters & Formulas
-            </h3>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.1rem', marginBottom: '1.8rem' }}>
-              {/* Support Filter */}
-              <div style={{ background: 'var(--inner-box-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1.25rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <span style={{ fontWeight: '700', fontSize: '1.02rem', color: 'var(--text-main)' }}>1. Minimum Support (`Volume & Noise Filter`)</span>
-                  <span className="mono" style={{ fontSize: '0.8rem', background: 'var(--badge-bg)', padding: '0.2rem 0.65rem', borderRadius: '100px', color: 'var(--text-muted)' }}>Frequency Pruning</span>
-                </div>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.55', margin: '0 0 0.65rem' }}>
-                  The engine first counts how often each item combination appears across all receipts. Any combo below your <strong>Min Support Floor</strong> (`e.g., 5.0%`) is discarded immediately to eliminate accidental statistical noise.
-                </p>
-                <div style={{ background: 'rgba(0, 0, 0, 0.22)', padding: '0.65rem 0.95rem', borderRadius: '8px', fontSize: '0.88rem', fontFamily: 'var(--font-mono)', color: 'var(--primary-color)' }}>
-                  Support(X ∪ Y) = (Count of Receipts Containing Both X and Y) ÷ (Total Store Receipts)
-                </div>
-              </div>
-
-              {/* Confidence Filter */}
-              <div style={{ background: 'var(--inner-box-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1.25rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <span style={{ fontWeight: '700', fontSize: '1.02rem', color: 'var(--text-main)' }}>2. Minimum Confidence (`Conditional Probability`)</span>
-                  <span className="mono" style={{ fontSize: '0.8rem', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '0.2rem 0.65rem', borderRadius: '100px' }}>Reliability %</span>
-                </div>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.55', margin: '0 0 0.65rem' }}>
-                  For every frequent itemset, the engine tests directional rules (`If X → Then Y`). It calculates what percentage of shoppers who bought X also picked up Y. Rules below your <strong>Min Confidence Floor</strong> (`e.g., 50.0%`) are rejected.
-                </p>
-                <div style={{ background: 'rgba(0, 0, 0, 0.22)', padding: '0.65rem 0.95rem', borderRadius: '8px', fontSize: '0.88rem', fontFamily: 'var(--font-mono)', color: '#10b981' }}>
-                  Confidence(X → Y) = Support(X ∪ Y) ÷ Support(X) = (Receipts with Both) ÷ (Receipts with X)
-                </div>
-              </div>
-
-              {/* Lift Filter */}
-              <div style={{ background: 'var(--inner-box-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1.25rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <span style={{ fontWeight: '700', fontSize: '1.02rem', color: 'var(--text-main)' }}>3. Lift & Correlation (`Synergy Multiplier`)</span>
-                  <span className="mono" style={{ fontSize: '0.8rem', background: 'rgba(124, 58, 237, 0.15)', color: 'var(--accent-color)', padding: '0.2rem 0.65rem', borderRadius: '100px' }}>Strength Factor</span>
-                </div>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', lineHeight: '1.55', margin: '0 0 0.65rem' }}>
-                  Measures true cross-selling power by dividing out item Y's natural popularity. A Lift of `1.00x` means no link (`independent`). A Lift of `2.40x` proves that buying X actively makes a customer <strong>2.4 times more likely</strong> to buy Y than average!
-                </p>
-                <div style={{ background: 'rgba(0, 0, 0, 0.22)', padding: '0.65rem 0.95rem', borderRadius: '8px', fontSize: '0.88rem', fontFamily: 'var(--font-mono)', color: 'var(--accent-color)' }}>
-                  Lift(X → Y) = Confidence(X → Y) ÷ Support(Y)
-                </div>
-              </div>
-            </div>
-
-            {/* How Recommendations Are Tagged */}
-            <div style={{ background: 'var(--inner-box-bg)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1.25rem', marginBottom: '1.75rem' }}>
-              <h4 style={{ fontSize: '1rem', fontWeight: '700', color: 'var(--text-main)', margin: '0 0 0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <BookOpen size={17} style={{ color: 'var(--primary-color)' }} /> How Recommendations & Badges Are Computed
-              </h4>
-              <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', lineHeight: '1.6', margin: 0 }}>
-                Once all rules pass your 3 threshold filters, they are sorted descending by <strong>Lift × Confidence</strong>.
-                <br />● <strong>🔥 High Synergy ({"Lift > 1.2x & Confidence > 50%"})</strong>: Top-tier product pairings recommended for immediate bundle pricing, end-cap displays, or checkout pop-ups.
-                <br />● <strong>🛒 Cross-Promotion ({"High Volume / Moderate Lift"})</strong>: Strong volume anchors recommended for circular ads or aisle co-location.
-              </p>
-            </div>
-
-            {/* Live Data Example Card */}
-            <div style={{
-              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(16, 185, 129, 0.12) 100%)',
-              border: '1px solid rgba(99, 102, 241, 0.35)',
-              borderRadius: '16px',
-              padding: '1.4rem 1.6rem',
-              marginBottom: '1.75rem',
-              position: 'relative'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.85rem' }}>
-                <h4 style={{ fontSize: '1.08rem', fontWeight: '800', color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <TrendingUp size={20} style={{ color: '#10b981' }} /> Live Example Based on Your Uploaded Data
-                </h4>
-                <span style={{ fontSize: '0.78rem', background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', padding: '0.25rem 0.75rem', borderRadius: '100px', fontWeight: '700', border: '1px solid rgba(16, 185, 129, 0.4)' }}>
-                  Dataset: {activeDatasetName || file?.name || 'Store Transactions'}
-                </span>
-              </div>
-
-              {(() => {
-                const sampleRule = consolidatedRules?.[0] || results?.rules?.[0];
-                const itemA = sampleRule ? sampleRule.antecedents.join(' + ') : (stats?.top_items?.[0]?.name || 'Whole Milk');
-                const itemB = sampleRule ? sampleRule.consequents.join(' + ') : (stats?.top_items?.[1]?.name || 'Organic Bread');
-                const conf = sampleRule ? (sampleRule.confidence * 100).toFixed(0) : '68';
-                const lift = sampleRule ? sampleRule.lift.toFixed(2) : '2.45';
-                const boost = sampleRule ? Math.max(25, ((sampleRule.lift - 1) * 100).toFixed(0)) : '145';
-                const supportPercent = sampleRule ? (sampleRule.support * 100).toFixed(1) : '12.4';
-
-                return (
-                  <div>
-                    <p style={{ fontSize: '0.92rem', color: 'var(--text-main)', lineHeight: '1.6', margin: '0 0 1rem' }}>
-                      Suppose your Excel/CSV file shows that when shoppers buy <strong>{itemA}</strong>, they frequently also purchase <strong>{itemB}</strong>:
-                    </p>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.85rem', marginBottom: '1.1rem' }}>
-                      <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '0.85rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Store Co-Purchase Rate</div>
-                        <div style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--primary-color)' }}>{supportPercent}%</div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>of all receipts contain both</div>
-                      </div>
-                      <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '0.85rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Shopper Reliability</div>
-                        <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#10b981' }}>{conf}%</div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>chance to grab {itemB}</div>
-                      </div>
-                      <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '0.85rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)' }}>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Synergy Lift</div>
-                        <div style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--accent-color)' }}>{lift}x</div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>stronger than random</div>
-                      </div>
-                    </div>
-                    <div style={{ background: 'rgba(16, 185, 129, 0.15)', borderLeft: '4px solid #10b981', padding: '0.85rem 1.1rem', borderRadius: '0 10px 10px 0' }}>
-                      <div style={{ fontWeight: '700', color: '#fff', fontSize: '0.92rem', marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                        💰 How Your Sales Boost ({"+" + boost + "% Surge"}):
-                      </div>
-                      <p style={{ fontSize: '0.85rem', color: 'var(--text-main)', margin: 0, lineHeight: '1.5' }}>
-                        Because shoppers buying <strong>{itemA}</strong> are <strong>{lift}x more likely</strong> to buy <strong>{itemB}</strong>, placing them side-by-side on an end-cap or offering a <em>Buy {itemA}, get 10% off {itemB}</em> bundle directly turns single-item baskets into high-value pairs—generating an estimated <strong>+{boost}% cross-sell revenue boost</strong> for these products!
-                      </p>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* Footer */}
-            <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1.3rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                <CheckCircle2 size={16} style={{ color: 'var(--accent-color)' }} />
-                <span>Tip: Set algorithm to <strong>Auto (`Adaptive`)</strong> in the parameters panel for automatic floor calculation!</span>
-              </div>
-              <button
-                className="btn btn-primary"
-                onClick={() => setShowMiningModal(false)}
-                style={{ padding: '0.65rem 1.6rem', fontSize: '0.92rem', fontWeight: '600' }}
-              >
-                Got It, Close Explanation
-              </button>
-            </div>
-          </div>
+          gap: '0.6rem'
+        }}>
+          <AlertTriangle size={16} style={{ color: '#d97706', flexShrink: 0 }} />
+          <div><strong>Notice:</strong> {duplicateNotice}</div>
         </div>
       )}
+
+      {hasActiveSource && isEmptyUpload && stats.total_transactions === 0 && (
+        <div style={{
+          background: '#fef3c7',
+          border: '1px solid #fde68a',
+          color: '#92400e',
+          padding: '0.75rem 1rem',
+          borderRadius: '10px',
+          fontSize: '0.82rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.6rem'
+        }}>
+          <AlertTriangle size={16} style={{ color: '#d97706', flexShrink: 0 }} />
+          <div><strong>Warning:</strong> Uploaded file contains 0 valid transactions.</div>
+        </div>
+      )}
+
+      {/* ── 2. Middle Section: 3-Column Grid ── */}
+      <ItemFrequencies
+        stats={stats}
+        results={results}
+        selectedProduct={selectedProduct}
+        onSelectProduct={handleSelectProduct}
+        coBoughtResults={coBoughtResults}
+        loadingCoBought={loadingCoBought}
+        onClearSelectedProduct={() => {
+          setSelectedProduct(null);
+          setCoBoughtResults([]);
+        }}
+      />
+
+      {/* ── 3. Bottom Section: Full-Width Recommendations Table ── */}
+      <RecommendationsView
+        results={results}
+        rules={filteredConsolidatedRules}
+        groupedSets={filteredGroupedSets}
+        activeSubTab={activeSubTab}
+        onSubTabChange={(tab) => setActiveSubTab(tab)}
+        recommendationSearchTerm={recommendationSearchTerm}
+        onSearchChange={(term) => setRecommendationSearchTerm(term)}
+        marketType={results?.metrics?.adaptive_thresholds?.market_type || 'Default/unknown'}
+        getSuggestedAction={getSuggestedAction}
+        stats={stats}
+        onExportCSV={handleExportCSV}
+        onShowCalculations={() => setShowMiningModal(true)}
+        onOpenParamsModal={() => setShowParamsModal(true)}
+        miningStatus={miningStatus}
+      />
+
+      {/* ── 4. Mining Parameters Modal ── */}
+      <MiningParametersModal
+        isOpen={showParamsModal}
+        onClose={() => setShowParamsModal(false)}
+        params={params}
+        onSaveAndRun={(newParams) => {
+          setParams(newParams);
+          sessionStorage.setItem('analytics_params', JSON.stringify(newParams));
+          runMining(newParams);
+        }}
+      />
+
+      {/* ── 5. Mining Engine Computation Modal ── */}
+      <MiningEngineModal
+        isOpen={showMiningModal}
+        onClose={() => setShowMiningModal(false)}
+        stats={stats}
+        results={results}
+        consolidatedRules={consolidatedRules}
+        activeDatasetName={activeDatasetName}
+        fileName={file?.name}
+      />
 
 
     </div>

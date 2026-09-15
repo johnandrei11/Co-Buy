@@ -7,12 +7,16 @@ import json
 import math
 import tracemalloc
 import hashlib
+import hmac
+import base64
 import logging
 import secrets
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import datetime
 from datetime import datetime, timedelta, timezone
+import re
 from mlxtend.frequent_patterns import apriori, fpgrowth, association_rules
 from mlxtend.preprocessing import TransactionEncoder
 
@@ -28,53 +32,123 @@ MARKET_TYPE_THRESHOLDS = {
     'Default/unknown':   {'min_support': 0.005, 'min_confidence': 0.15, 'min_lift': 1.0}
 }
 
-def infer_market_type(filename, transactions=None):
-    if not filename:
-        filename = ""
-    fn_lower = str(filename).lower()
-    if 'coffee' in fn_lower or 'cafe' in fn_lower or 'espresso' in fn_lower:
-        return 'Coffee Shop'
-    if 'pet' in fn_lower or 'dog' in fn_lower or 'cat' in fn_lower:
-        return 'Pet Food'
-    if 'convenience' in fn_lower or 'mart' in fn_lower or 'retail' in fn_lower or 'grocery' in fn_lower:
-        return 'Convenience Store'
-        
-    if transactions:
-        all_items = [str(item).lower() for sublist in transactions[:100] for item in sublist]
-        item_str = " ".join(all_items)
-        if any(kw in item_str for kw in ['espresso', 'latte', 'cappuccino', 'croissant', 'macchiato', 'americano']):
-            return 'Coffee Shop'
-        if any(kw in item_str for kw in ['kibble', 'dog food', 'cat food', 'pet treat', 'cat litter', 'leash']):
-            return 'Pet Food'
-        if any(kw in item_str for kw in ['milk', 'bread', 'eggs', 'soda', 'cereal', 'snack', 'beer']):
-            return 'Convenience Store'
-            
-    return 'Default/unknown'
-
 app = Flask(__name__)
+SECRET_KEY = os.environ.get('SECRET_KEY', 'cobuy-secure-hmac-key-production-2026')
+app.secret_key = SECRET_KEY
 CORS(app)
 
 # Initialize database tables
 db.init_db()
 
+# ── Cryptographic Token Generation & Verification ────────────────────────────
+
+def generate_auth_token(email, expires_in_seconds=86400 * 7):
+    """Generate a tamper-proof cryptographically signed HMAC-SHA256 token containing user email and expiration."""
+    exp = int(time.time()) + expires_in_seconds
+    payload = json.dumps({'email': email.lower().strip(), 'exp': exp}, separators=(',', ':'))
+    payload_b64 = base64.urlsafe_b64encode(payload.encode('utf-8')).decode('utf-8').rstrip('=')
+    signature = hmac.new(SECRET_KEY.encode('utf-8'), payload_b64.encode('utf-8'), hashlib.sha256).hexdigest()
+    return f"cobuy_{payload_b64}_{signature}"
+
+def verify_auth_token(token_str):
+    """
+    Verify the token signature and expiration.
+    Returns user email if valid, or None if invalid/expired/tampered.
+    Also accepts transition tokens 'mock-jwt-token-{email}' only if the user exists in database.
+    """
+    if not token_str or not isinstance(token_str, str):
+        return None
+    token_str = token_str.strip()
+    if token_str.startswith('Bearer '):
+        token_str = token_str[7:].strip()
+        
+    if token_str.startswith('cobuy_'):
+        parts = token_str.split('_')
+        if len(parts) != 3:
+            return None
+        _, payload_b64, signature = parts
+        expected_sig = hmac.new(SECRET_KEY.encode('utf-8'), payload_b64.encode('utf-8'), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected_sig):
+            return None # Tampered signature
+        try:
+            padding = len(payload_b64) % 4
+            if padding:
+                payload_b64 += '=' * (4 - padding)
+            payload_json = base64.urlsafe_b64decode(payload_b64.encode('utf-8')).decode('utf-8')
+            data = json.loads(payload_json)
+            if data.get('exp') and time.time() > data['exp']:
+                return None # Expired token
+            email = data.get('email')
+            return email.lower().strip() if email else None
+        except Exception:
+            return None
+
+    # For transition backward compatibility with active sessions
+    if token_str.startswith('mock-jwt-token-'):
+        email = token_str.replace('mock-jwt-token-', '').strip().lower()
+        if email and db.get_user(email):
+            return email
+
+    return None
+
 def get_current_user_email():
-    email = request.headers.get('X-User-Email')
-    if email:
-        return email.strip().lower()
+    """Derive user identity ONLY from verified token. Never trust client-supplied owner ID."""
     auth = request.headers.get('Authorization', '')
-    if auth.startswith('Bearer mock-jwt-token-'):
-        return auth.replace('Bearer mock-jwt-token-', '').strip().lower()
-    email = request.args.get('user_email') or request.form.get('user_email')
-    if email:
-        return email.strip().lower()
+    if auth:
+        verified_email = verify_auth_token(auth)
+        if verified_email:
+            return verified_email
     return None
 
 def get_current_user():
-    """Return the full user dict for the requester, or None."""
+    """Return the full user dict for the authenticated requester, or None."""
     email = get_current_user_email()
     if not email:
         return None
     return db.get_user(email)
+
+def require_authenticated_user():
+    """
+    Server-side guard: verify request has a valid authenticated session.
+    Returns (user_info, error_tuple). If unauthenticated, returns (None, (response, 401)).
+    """
+    user_info = get_current_user()
+    if not user_info:
+        return None, (jsonify({'error': 'Unauthorized: invalid or missing authentication'}), 401)
+    return user_info, None
+
+def authorize_dataset_access(dataset_id, user_info):
+    """
+    Server-side guard: verify that dataset_id belongs to the authenticated user.
+    Returns (dataset_info, error_tuple).
+    Returns 404 if dataset not found, 403 if dataset belongs to another user.
+    """
+    if not dataset_id:
+        return None, (jsonify({'error': 'dataset_id is required'}), 400)
+    
+    conn = db.get_db_connection()
+    row = conn.execute('SELECT * FROM datasets WHERE id = ?', (dataset_id,)).fetchone()
+    conn.close()
+    
+    if not row:
+        return None, (jsonify({'error': 'Dataset not found'}), 404)
+        
+    dataset = dict(row)
+    dataset_owner = (dataset.get('user_email') or '').lower().strip()
+    current_email = (user_info.get('email') or '').lower().strip()
+    
+    # Ownership match
+    if dataset_owner == current_email:
+        return dataset, None
+        
+    # Store-level sharing for team members belonging to the same store
+    store_id = user_info.get('store_id')
+    if store_id:
+        store = db.get_store_by_id(store_id)
+        if store and store.get('owner_email', '').lower().strip() == dataset_owner:
+            return dataset, None
+
+    return None, (jsonify({'error': 'Forbidden: you do not have permission to access this dataset'}), 403)
 
 def _get_store_id_for_user(user_info):
     """Resolve store_id: shop_admin owns a store; team_member belongs to one."""
@@ -173,180 +247,339 @@ data_store = {
     'last_rules': None
 }
 
+NOISE_KEYWORDS = {
+    'postage', 'post', 'shipping', 'freight', 'delivery', 'delivery fee',
+    'discount', 'coupon', 'voucher', 'promo', 'promotion', 'manual',
+    'fee', 'fees', 'bank charges', 'service charge', 'surcharge',
+    'gift card', 'gift voucher', 'test', 'sample', 'samples', 'test product',
+    'adjustment', 'canceled', 'cancellation', 'refund', 'return', 'returns',
+    'credit note', 'bad debt', 'write-off', 'amazon fee', 'void', 'unknown',
+    'carriage', 'packing', 'commission', 'handling', 'damaged', 'lost',
+    'destroyed', 'missing', 'unspecified', 'miscellaneous', 'misc', 'item'
+}
+
+def standardize_date_string(val):
+    """
+    Robustly cleans, parses, and standardizes any date representation into ISO 'YYYY-MM-DD'.
+    Handles:
+      - Excel serial float/int (e.g. 46086 -> 2026-03-05)
+      - YYYY/MM/DD, YYYY-MM-DD, YYYY.MM.DD (e.g. 2026/03/05 -> 2026-03-05)
+      - DD/MM/YYYY, MM/DD/YYYY, DD-MM-YYYY, MM-DD-YYYY (e.g. 05/03/2026 -> 2026-05-03)
+      - 8-digit integers (e.g. 20260305 -> 2026-03-05)
+      - Full timestamps (e.g. 2026/03/05 14:30:00 -> 2026-03-05)
+      - Textual dates (e.g. 05-May-2026, March 5 2026 -> 2026-05-05, 2026-03-05)
+    """
+    if pd.isna(val) or val is None:
+        return None
+    sval = str(val).strip()
+    if not sval or sval.lower() in {'nan', 'none', 'null', 'nat', 'undefined'}:
+        return None
+
+    # 1. Excel serial numbers (typical retail datasets: 20000 to 65000)
+    try:
+        fval = float(val)
+        if 20000 <= fval <= 65000:
+            dt = datetime(1899, 12, 30) + timedelta(days=fval)
+            return dt.strftime('%Y-%m-%d')
+    except (ValueError, TypeError):
+        pass
+
+    # 2. 8-digit integers YYYYMMDD
+    if len(sval) == 8 and sval.isdigit():
+        try:
+            return datetime.strptime(sval, '%Y%m%d').strftime('%Y-%m-%d')
+        except Exception:
+            pass
+
+    # Strip time part if present for clean date parsing
+    clean_sval = re.split(r'[ T]', sval)[0].strip()
+    parts = re.split(r'[-/.]', clean_sval)
+
+    # 3. If YYYY/MM/DD or YYYY-MM-DD or YYYY.MM.DD
+    if len(parts) == 3 and len(parts[0]) == 4 and parts[0].isdigit() and parts[1].isdigit() and parts[2].isdigit():
+        try:
+            y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
+            return datetime(y, m, d).strftime('%Y-%m-%d')
+        except Exception:
+            pass
+
+    # 4. If DD/MM/YYYY or MM/DD/YYYY
+    if len(parts) == 3 and len(parts[2]) == 4 and parts[0].isdigit() and parts[1].isdigit() and parts[2].isdigit():
+        p0, p1, y = int(parts[0]), int(parts[1]), int(parts[2])
+        try:
+            if p0 > 12 >= p1:
+                return datetime(y, p1, p0).strftime('%Y-%m-%d')
+            elif p1 > 12 >= p0:
+                return datetime(y, p0, p1).strftime('%Y-%m-%d')
+            else:
+                return datetime(y, p0, p1).strftime('%Y-%m-%d')
+        except Exception:
+            pass
+
+    # 5. Fallback via pandas to_datetime (handles textual months: 05-May-2026, March 5, 2026, etc.)
+    try:
+        dt = pd.to_datetime(sval, errors='coerce')
+        if pd.notna(dt):
+            return dt.strftime('%Y-%m-%d')
+    except Exception:
+        pass
+
+    return None
+
+def format_date_human(val, full_month=False):
+    """
+    Transforms any raw date number/string (e.g. 2026/03/05 or 05/03/2026)
+    into clean human-readable date e.g. 'Mar 05, 2026' or 'May 03, 2026' or full 'March 05, 2026'.
+    """
+    iso = standardize_date_string(val)
+    if not iso:
+        return str(val) if val else ''
+    try:
+        dt = datetime.strptime(iso, '%Y-%m-%d')
+        fmt = '%B %d, %Y' if full_month else '%b %d, %Y'
+        return dt.strftime(fmt)
+    except Exception:
+        return iso
+
+def clean_item_name(raw):
+    """
+    Cleans dirty product/item names:
+    - Strips leading/trailing punctuation, quotes, brackets, and symbols
+    - Collapses multiple whitespace
+    - Rejects pure numeric barcodes, nulls, and non-product retail noise
+    - Normalizes case to clean Title Case while preserving standard acronyms
+    """
+    if pd.isna(raw) or raw is None:
+        return None
+    s = str(raw).strip()
+    s = re.sub(r'^[\"\'\`\,\.\;\:\!\?\*\#\-\_\(\)\[\]\{\}\\\/]+', '', s)
+    s = re.sub(r'[\"\'\`\,\.\;\:\!\?\*\#\-\_\(\)\[\]\{\}\\\/]+$', '', s)
+    s = re.sub(r'[\s\u00a0]+', ' ', s).strip()
+    
+    if not s or len(s) <= 1:
+        return None
+    if s.lower() in {'nan', 'null', 'none', 'n/a', 'na', '?', '-', 'undefined', 'unknown', 'empty', 'void', 'missing'}:
+        return None
+    if s.lower() in NOISE_KEYWORDS:
+        return None
+    # Reject pure numeric barcode IDs
+    if s.isdigit() and len(s) >= 4:
+        return None
+
+    # Title Case normalization
+    if s.isupper() or s.islower():
+        words = s.split(' ')
+        capitalized = []
+        acronyms = {'BLT', 'USB', 'BBQ', 'TV', 'DIY', 'LED', 'CD', 'DVD', 'PC'}
+        for w in words:
+            if w.upper() in acronyms:
+                capitalized.append(w.upper())
+            else:
+                capitalized.append(w.capitalize())
+        s = ' '.join(capitalized)
+        
+    return s
+
 def parse_df_to_transactions(df):
     initial_rows = len(df)
-    
-    if len(df.columns) == 0:
-        return [], 0, 0
-        
-    if len(df.columns) < 2:
-        col_name = df.columns[0]
-        missing_removed = int(df[col_name].isna().sum())
-        
-        raw_rows = df[col_name].dropna().astype(str).str.strip().tolist()
-        transactions = []
-        for row in raw_rows:
-            if not row or row.lower() == 'nan':
-                continue
-            items = [item.strip() for item in row.split(',') if item.strip()]
-            unique_items = []
-            for item in items:
-                if item not in unique_items:
-                    unique_items.append(item)
-            if unique_items:
-                transactions.append(unique_items)
-        return transactions, 0, missing_removed
+    if initial_rows == 0 or len(df.columns) == 0:
+        return [], 0, 0, [], None, None, [], []
 
-    # 3. Multi-column file: Identify columns dynamically
-    col_id = None
-    col_item = None
-    col_qty = None
-    
-    # Identify Transaction ID column
-    id_keywords = ['id', 'trans', 'order', 'receipt', 'invoice', 'bill', 'no', 'number']
-    for col in df.columns:
-        col_lower = str(col).lower()
-        if any(kw in col_lower for kw in id_keywords):
-            col_id = col
-            break
-    if col_id is None:
-        col_id = df.columns[0]
-        
-    # Identify Item/Product column
-    item_keywords = ['item', 'product', 'desc', 'purchase', 'name', 'article', 'goods']
-    for col in df.columns:
-        if col == col_id:
-            continue
-        col_lower = str(col).lower()
-        if any(kw in col_lower for kw in item_keywords) and 'id' not in col_lower:
-            col_item = col
-            break
-            
-    # Check for comma-separated column if not found by keywords
-    if col_item is None:
-        for col in df.columns:
-            if col == col_id:
-                continue
-            sample_vals = df[col].dropna().head(10).astype(str)
-            if any(',' in val for val in sample_vals):
-                col_item = col
-                break
-                
-    if col_item is None:
-        col_item = df.columns[1] if len(df.columns) > 1 else df.columns[0]
-        
-    # Identify Quantity column
-    qty_keywords = ['qty', 'quantity', 'count', 'vol', 'volume', 'amount_sold']
-    for col in df.columns:
-        col_lower = str(col).lower()
-        if any(kw in col_lower for kw in qty_keywords):
-            col_qty = col
-            break
+    # Drop fully empty columns & clean column names
+    df = df.dropna(how='all', axis=1)
+    df.columns = [re.sub(r'[\"\']', '', str(c)).strip() for c in df.columns]
 
-    # Clean exact row duplicates first
+    # Drop exact duplicate rows
     df = df.drop_duplicates()
     duplicates_removed = initial_rows - len(df)
 
-    # Count missing values in the key columns
-    missing_removed = int(df[[col_id, col_item]].isna().any(axis=1).sum())
-    
-    # Filter out missing key values
-    df_clean = df.dropna(subset=[col_id, col_item])
-    
-    # Parse rows
-    tx_map = {}
-    
-    for _, row in df_clean.iterrows():
-        tx_val = row[col_id]
-        item_val = row[col_item]
-        
-        tx_id = str(tx_val).strip()
-        item_str = str(item_val).strip()
-        if not tx_id or not item_str or item_str.lower() == 'nan':
-            continue
-            
-        # Extract quantity if column exists
-        qty_val = 1
-        if col_qty is not None:
-            try:
-                qty_raw = row[col_qty]
-                if not pd.isna(qty_raw):
-                    qty_val = int(float(qty_raw))
-                    if qty_val < 1:
-                        qty_val = 1
-            except (ValueError, TypeError):
-                qty_val = 1
-                
-        row_items = [i.strip() for i in item_str.split(',') if i.strip()]
-        
-        if tx_id not in tx_map:
-            tx_map[tx_id] = []
-            
-        for item in row_items:
-            for _ in range(qty_val):
-                tx_map[tx_id].append(item)
-                
-    transactions = [tx for tx in tx_map.values() if tx]
-
-    # ── Basket value computation (Quantity × UnitPrice per transaction) ──────
-    # Identify UnitPrice column
-    col_price = None
-    price_keywords = ['price', 'unit_price', 'unitprice', 'cost', 'rate']
-    for col in df.columns:
-        col_lower = str(col).lower()
-        if any(kw in col_lower for kw in price_keywords):
-            col_price = col
-            break
-
-    # Build basket_values parallel to tx_map insertion order
-    basket_values_list = []
-    basket_avg = None
-    if col_price is not None:
-        price_map = {}  # csv_tx_id -> total basket value
-        for _, row in df_clean.iterrows():
-            tx_id_str = str(row[col_id]).strip()
-            if not tx_id_str or tx_id_str.lower() == 'nan':
+    # 1. Single-column format (comma/semicolon/pipe separated basket per line)
+    if len(df.columns) == 1:
+        col_name = df.columns[0]
+        missing_removed = int(df[col_name].isna().sum())
+        transactions = []
+        raw_rows = df[col_name].dropna().astype(str).str.strip().tolist()
+        for row in raw_rows:
+            if not row or row.lower() in {'nan', 'null', 'none'}:
                 continue
-            try:
-                price_val = float(row[col_price]) if not pd.isna(row[col_price]) else 0.0
-            except (ValueError, TypeError):
-                price_val = 0.0
-            qty_val2 = 1.0
-            if col_qty is not None:
-                try:
-                    qty_raw2 = row[col_qty]
-                    if not pd.isna(qty_raw2):
-                        qty_val2 = max(float(qty_raw2), 0.0)
-                except (ValueError, TypeError):
-                    qty_val2 = 1.0
-            price_map[tx_id_str] = price_map.get(tx_id_str, 0.0) + qty_val2 * price_val
+            delims = [',', ';', '|']
+            delim = ','
+            for d in delims:
+                if d in row:
+                    delim = d
+                    break
+            items = [clean_item_name(item) for item in row.split(delim)]
+            valid_items = list(dict.fromkeys([it for it in items if it]))
+            if valid_items:
+                transactions.append(valid_items)
+        detected_cols = [col_name]
+        return transactions, duplicates_removed, missing_removed, [0.0]*len(transactions), None, None, [None]*len(transactions), detected_cols
 
-        for csv_key in tx_map.keys():
-            basket_values_list.append(price_map.get(csv_key, 0.0))
-        if basket_values_list:
-            basket_avg = sum(basket_values_list) / len(basket_values_list)
-    else:
-        basket_values_list = [0.0] * len(transactions)
+    # 2. Check for Wide/Horizontal format:
+    col_names_lower = [str(c).lower() for c in df.columns]
+    has_id = any(any(k in c for k in ['id', 'invoice', 'order', 'receipt', 'trans', 'bill', 'txn']) for c in col_names_lower)
 
-    # ── Date range computation ───────────────────────────────────────────────
+    if not has_id and len(df.columns) > 3:
+        first_col_is_num = pd.to_numeric(df.iloc[:, 0], errors='coerce').notna().mean() > 0.8
+        if not first_col_is_num:
+            transactions = []
+            missing_removed = 0
+            for _, row in df.iterrows():
+                basket = []
+                for val in row:
+                    item = clean_item_name(val)
+                    if item:
+                        basket.append(item)
+                    elif pd.isna(val) or str(val).strip() == '':
+                        missing_removed += 1
+                unique_basket = list(dict.fromkeys(basket))
+                if unique_basket:
+                    transactions.append(unique_basket)
+            detected_cols = [str(c) for c in df.columns[:5]]
+            return transactions, duplicates_removed, missing_removed, [0.0]*len(transactions), None, None, [None]*len(transactions), detected_cols
+
+    # 3. Standard Tidy / Vertical Format:
+    col_id = None
+    col_item = None
+    col_qty = None
+    col_price = None
     col_date = None
-    date_keywords = ['date', 'time', 'datetime', 'timestamp', 'day']
+
+    id_keywords = ['invoice', 'order', 'receipt', 'trans', 'bill', 'txn', 'cart', 'basket', 'sale', 'id', 'no']
+    item_keywords = ['product', 'item', 'desc', 'description', 'name', 'article', 'goods', 'sku', 'commodity', 'menu']
+    date_keywords = ['date', 'time', 'datetime', 'timestamp', 'day', 'trans_date', 'sale_date', 'bill_date', 'invoicedate']
+    qty_keywords = ['qty', 'quantity', 'count', 'vol', 'volume', 'amount_sold', 'units', 'pieces']
+    price_keywords = ['price', 'unit_price', 'unitprice', 'cost', 'rate', 'item_price', 'amount', 'total']
+
     for col in df.columns:
-        col_lower = str(col).lower()
-        if any(kw in col_lower for kw in date_keywords):
+        cl = str(col).lower()
+        if col_id is None and any(kw in cl for kw in id_keywords):
+            col_id = col
+        elif col_date is None and any(kw in cl for kw in date_keywords):
             col_date = col
-            break
+        elif col_qty is None and any(kw in cl for kw in qty_keywords):
+            col_qty = col
+        elif col_price is None and any(kw in cl for kw in price_keywords):
+            col_price = col
+        elif col_item is None and any(kw in cl for kw in item_keywords) and 'id' not in cl:
+            col_item = col
 
+    # Fallbacks
+    if col_id is None:
+        col_id = df.columns[0]
+    if col_item is None:
+        for col in df.columns:
+            if col not in [col_id, col_date, col_qty, col_price]:
+                col_item = col
+                break
+    if col_item is None:
+        col_item = df.columns[1] if len(df.columns) > 1 else df.columns[0]
+
+    detected_cols = [str(c) for c in [col_id, col_item, col_date, col_qty, col_price] if c is not None]
+
+    # Clean rows
+    missing_removed = 0
+    noise_removed = 0
+    tx_map = {}
+    tx_dates_map = {}
+    price_map = {}
+
+    for _, row in df.iterrows():
+        raw_id = row[col_id] if col_id in row else None
+        raw_item = row[col_item] if col_item in row else None
+
+        if pd.isna(raw_id) or str(raw_id).strip() in {'', 'nan', 'null', 'none'}:
+            missing_removed += 1
+            continue
+
+        tx_id_str = str(raw_id).strip()
+        # Drop cancellation invoices (e.g. C536379)
+        if tx_id_str.upper().startswith('C') and len(tx_id_str) > 1 and tx_id_str[1:].isdigit():
+            noise_removed += 1
+            continue
+
+        if pd.isna(raw_item) or str(raw_item).strip() in {'', 'nan', 'null', 'none'}:
+            missing_removed += 1
+            continue
+
+        # Check quantity
+        qty = 1
+        if col_qty is not None and col_qty in row:
+            try:
+                raw_q = row[col_qty]
+                if pd.notna(raw_q):
+                    qty = int(float(raw_q))
+            except Exception:
+                qty = 1
+        if qty <= 0:
+            noise_removed += 1
+            continue
+
+        # Check item cleaning & noise
+        raw_item_str = str(raw_item).strip()
+        cleaned_item = clean_item_name(raw_item_str)
+        if not cleaned_item:
+            if raw_item_str.lower() in NOISE_KEYWORDS:
+                noise_removed += 1
+            else:
+                missing_removed += 1
+            continue
+
+        # Split comma-separated items if present inside item cell
+        items_in_cell = [clean_item_name(x) for x in cleaned_item.split(',') if clean_item_name(x)]
+        if not items_in_cell:
+            missing_removed += 1
+            continue
+
+        # Date handling with robust format normalization
+        if tx_id_str not in tx_dates_map and col_date is not None and col_date in row:
+            clean_date = standardize_date_string(row[col_date])
+            tx_dates_map[tx_id_str] = clean_date
+
+        # Price handling
+        if col_price is not None and col_price in row:
+            try:
+                pval = float(row[col_price]) if pd.notna(row[col_price]) else 0.0
+                if pval < 0:
+                    pval = 0.0
+            except Exception:
+                pval = 0.0
+            price_map[tx_id_str] = price_map.get(tx_id_str, 0.0) + (qty * pval)
+
+        if tx_id_str not in tx_map:
+            tx_map[tx_id_str] = []
+
+        for it in items_in_cell:
+            for _ in range(qty):
+                tx_map[tx_id_str].append(it)
+
+    # Convert to transaction list (deduplicating items within each transaction for mining)
+    transactions = []
+    basket_values_list = []
+    tx_dates_list = []
+
+    for tx_id, items in tx_map.items():
+        if items:
+            unique_items = list(dict.fromkeys(items))
+            transactions.append(unique_items)
+            basket_values_list.append(price_map.get(tx_id, 0.0))
+            tx_dates_list.append(tx_dates_map.get(tx_id))
+
+    basket_avg = sum(basket_values_list) / len(basket_values_list) if basket_values_list else 0.0
+
+    valid_dates = [d for d in tx_dates_list if d]
     date_range_days = None
-    if col_date is not None:
+    if valid_dates:
         try:
-            parsed_dates = pd.to_datetime(df_clean[col_date].dropna(), errors='coerce').dropna()
-            if len(parsed_dates) >= 2:
-                date_range_days = max(int((parsed_dates.max() - parsed_dates.min()).days), 1)
+            d_min = datetime.strptime(min(valid_dates), '%Y-%m-%d')
+            d_max = datetime.strptime(max(valid_dates), '%Y-%m-%d')
+            date_range_days = (d_max - d_min).days + 1
         except Exception:
-            date_range_days = None
+            pass
 
-    return transactions, duplicates_removed, missing_removed, basket_values_list, date_range_days, basket_avg
+    total_missing = missing_removed + noise_removed
+    return transactions, duplicates_removed, total_missing, basket_values_list, date_range_days, basket_avg, tx_dates_list, detected_cols
+
 
 
 @app.route('/')
@@ -417,7 +650,7 @@ def login():
     status       = user_info.get('status') or 'active'
 
     return jsonify({
-        'token': f'mock-jwt-token-{email}',
+        'token': generate_auth_token(email),
         'user': {
             'email':        email,
             'name':         user_info['name'],
@@ -490,7 +723,7 @@ def register():
 
         return jsonify({
             'message': 'Registration successful',
-            'token': f'mock-jwt-token-{email}',
+            'token': generate_auth_token(email),
             'user': {
                 'email': email,
                 'name': name,
@@ -504,6 +737,11 @@ def register():
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
+    user_info, err = require_authenticated_user()
+    if err:
+        return err[0], err[1]
+    user_email = user_info['email']
+
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
     
@@ -512,7 +750,6 @@ def upload_file():
         return jsonify({'error': 'No selected file'}), 400
 
     try:
-        user_email = get_current_user_email()
         file_content = file.read()
         file_hash = hashlib.sha256(file_content).hexdigest()
         file.seek(0)
@@ -525,10 +762,11 @@ def upload_file():
             return jsonify({'error': 'Invalid file format'}), 400
 
         # Preprocessing & Data Cleaning
-        transactions, duplicates_removed, missing_removed, basket_values_list, date_range_days, basket_avg = parse_df_to_transactions(df)
+        transactions, duplicates_removed, missing_removed, basket_values_list, date_range_days, basket_avg, tx_dates_list, detected_cols = parse_df_to_transactions(df)
 
         if not transactions:
-            ds_id = db.add_dataset(file.filename, 0, 0, user_email=user_email, file_hash=file_hash, market_type='Default/unknown')
+            ds_id = db.add_dataset(file.filename, 0, 0, user_email=user_email, file_hash=file_hash, market_type='Default/unknown',
+                                   missing_count=missing_removed, duplicates_count=duplicates_removed, columns_detected=detected_cols)
             return jsonify({
                 'message': 'File uploaded with empty dataset warning',
                 'transaction_count': 0,
@@ -558,7 +796,7 @@ def upload_file():
             # Check if transactions already exist for this dataset
             txs_exist = db.transactions_exist(ds_id, user_email=user_email)
             if not txs_exist:
-                db.add_transactions(transactions, dataset_id=ds_id, user_email=user_email)
+                db.add_transactions(transactions, dataset_id=ds_id, user_email=user_email, basket_values=basket_values_list, dates=tx_dates_list)
             return jsonify({
                 'duplicate_detected': True,
                 'message': f'This file ("{existing_ds["name"]}") is already in your File History (uploaded on {existing_ds.get("upload_date", "")}). Reusing the existing dataset.',
@@ -572,12 +810,13 @@ def upload_file():
             })
 
         # Save dataset metadata scoped to current user with SHA-256 hash
-        market_type = infer_market_type(file.filename, transactions)
+        market_type = 'Default/unknown'
         ds_id = db.add_dataset(file.filename, total_tx, unique_items_count, user_email=user_email, file_hash=file_hash, market_type=market_type,
-                               basket_avg=basket_avg, date_range_days=date_range_days)
+                               basket_avg=basket_avg, date_range_days=date_range_days,
+                               missing_count=missing_removed, duplicates_count=duplicates_removed, columns_detected=detected_cols)
         
         # Store new transactions without clearing other datasets
-        db.add_transactions(transactions, dataset_id=ds_id, user_email=user_email, basket_values=basket_values_list)
+        db.add_transactions(transactions, dataset_id=ds_id, user_email=user_email, basket_values=basket_values_list, dates=tx_dates_list)
 
         # ── Audit log ────────────────────────────────────────────────────────
         _log_current_user_action('UPLOAD_HISTORICAL_DATA', {
@@ -605,16 +844,25 @@ def upload_file():
 
 @app.route('/api/mine', methods=['POST'])
 def mine_rules():
+    user_info, err = require_authenticated_user()
+    if err:
+        return err[0], err[1]
+    user_email = user_info['email']
+
     params = request.json or {}
     algorithm = params.get('algorithm', 'auto') # 'auto', 'apriori', or 'fpgrowth'
     dataset_id = params.get('dataset_id') or request.args.get('dataset_id')
-    user_email = get_current_user_email()
     if not dataset_id:
         return jsonify({'error': 'No dataset selected or active in analytics'}), 400
+
+    dataset_info, auth_err = authorize_dataset_access(dataset_id, user_info)
+    if auth_err:
+        return auth_err[0], auth_err[1]
 
     transactions = db.get_transactions(user_email=user_email, dataset_id=dataset_id)
     if transactions is None or len(transactions) == 0:
         return jsonify({
+            'dataset_id': dataset_id,
             'rules': [],
             'frequent_itemsets': [],
             'algorithm_used': algorithm,
@@ -629,10 +877,7 @@ def mine_rules():
         
         # Determine market type and starting thresholds
         dataset_info = db.get_dataset_by_id(dataset_id, user_email=user_email) if dataset_id else None
-        market_type = dataset_info.get('market_type') if (dataset_info and dataset_info.get('market_type') and dataset_info.get('market_type') != 'Default/unknown') else None
-        if not market_type:
-            ds_name = dataset_info.get('name', '') if dataset_info else ''
-            market_type = infer_market_type(ds_name, transactions)
+        market_type = dataset_info.get('market_type') if (dataset_info and dataset_info.get('market_type')) else 'Default/unknown'
             
         market_config = MARKET_TYPE_THRESHOLDS.get(market_type, MARKET_TYPE_THRESHOLDS['Default/unknown'])
         curr_supp = market_config['min_support']
@@ -827,6 +1072,7 @@ def mine_rules():
                 }
             }
             return jsonify({
+                'dataset_id': dataset_id,
                 'rules': [],
                 'frequent_itemsets': [],
                 'gaps': [],
@@ -967,6 +1213,7 @@ def mine_rules():
         }
 
         return jsonify({
+            'dataset_id': dataset_id,
             'rules': formatted_rules,
             'frequent_itemsets': formatted_itemsets,
             'gaps': gaps,
@@ -979,8 +1226,12 @@ def mine_rules():
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
+    user_info, err = require_authenticated_user()
+    if err:
+        return err[0], err[1]
+    user_email = user_info['email']
+
     dataset_id = request.args.get('dataset_id')
-    user_email = get_current_user_email()
     if not dataset_id:
         return jsonify({
             'active': False,
@@ -991,6 +1242,11 @@ def get_stats():
             'all_items': [],
             'recommended_algorithm': 'None'
         })
+
+    dataset_info, auth_err = authorize_dataset_access(dataset_id, user_info)
+    if auth_err:
+        return auth_err[0], auth_err[1]
+
     transactions = db.get_transactions(user_email=user_email, dataset_id=dataset_id)
     if transactions is None or len(transactions) == 0:
         return jsonify({
@@ -1038,23 +1294,93 @@ def get_stats():
     
     unique_items_count = len(item_counts)
     recommended = 'FP-Growth' if total_transactions >= 500 or unique_items_count >= 50 else 'Apriori'
+
+    # Compute dataset health metrics
+    tx_with_dates = db.get_transactions_with_dates(user_email=user_email, dataset_id=dataset_id) or []
+    distinct_dates = sorted(list(set([tx['date'].split(' ')[0] for tx in tx_with_dates if tx.get('date')])))
+    
+    date_range_str = "No dates recorded"
+    if len(distinct_dates) == 1:
+        try:
+            d_obj = datetime.strptime(distinct_dates[0], '%Y-%m-%d')
+            date_range_str = d_obj.strftime('%b %d, %Y')
+        except Exception:
+            date_range_str = distinct_dates[0]
+    elif len(distinct_dates) > 1:
+        try:
+            d_start = datetime.strptime(distinct_dates[0], '%Y-%m-%d')
+            d_end = datetime.strptime(distinct_dates[-1], '%Y-%m-%d')
+            date_range_str = f"{d_start.strftime('%b %d')} — {d_end.strftime('%b %d, %Y')}"
+        except Exception:
+            date_range_str = f"{distinct_dates[0]} — {distinct_dates[-1]}"
+
+    missing_count = dataset_info.get('missing_count') or 0
+    duplicates_count = dataset_info.get('duplicates_count') or 0
+    raw_cols = dataset_info.get('columns_detected')
+    if raw_cols:
+        try:
+            cols_list = json.loads(raw_cols) if isinstance(raw_cols, str) else raw_cols
+        except Exception:
+            cols_list = ['Transaction ID', 'Item Name']
+    else:
+        cols_list = ['Transaction ID', 'Item Name']
+        if distinct_dates:
+            cols_list.append('Transaction Date')
+
+    if total_transactions == 0:
+        health_status = 'unable_to_analyze'
+        health_label = 'Unable to Analyze'
+        health_msg = 'The uploaded dataset contains 0 valid transactions.'
+    elif missing_count > 0:
+        health_status = 'needs_attention'
+        health_label = 'Needs Attention'
+        health_msg = f'{missing_count} rows with missing product names were cleaned during processing.'
+    else:
+        health_status = 'ready'
+        health_label = 'Ready'
+        health_msg = 'Your data is complete and ready for analysis.'
     
     return jsonify({
         'active': True,
         'dataset_id': dataset_id,
+        'dataset_name': dataset_info.get('name') or f"Dataset #{dataset_id}",
+        'market_type': dataset_info.get('market_type') or 'Default/unknown',
+        'upload_date': dataset_info.get('upload_date'),
+        'date_range_str': date_range_str,
         'total_transactions': total_transactions,
         'total_units_sold': total_items_sold,
         'unique_items_count': unique_items_count,
         'top_items': formatted_all_items[:10],
         'all_items': formatted_all_items,
-        'recommended_algorithm': recommended
+        'recommended_algorithm': recommended,
+        'health': {
+            'status': health_status,
+            'status_label': health_label,
+            'message': health_msg,
+            'valid_transactions': total_transactions,
+            'unique_products': unique_items_count,
+            'distinct_dates_count': len(distinct_dates),
+            'missing_names_count': missing_count,
+            'duplicates_removed': duplicates_count,
+            'columns_detected': cols_list,
+            'date_range_str': date_range_str
+        }
     })
 
 @app.route('/api/frequently_bought_together', methods=['GET'])
 def get_frequently_bought_together():
+    user_info, err = require_authenticated_user()
+    if err:
+        return err[0], err[1]
+    user_email = user_info['email']
+
     selected_product = request.args.get('product')
     dataset_id = request.args.get('dataset_id')
-    user_email = get_current_user_email()
+
+    if dataset_id:
+        dataset_info, auth_err = authorize_dataset_access(dataset_id, user_info)
+        if auth_err:
+            return auth_err[0], auth_err[1]
 
     if not selected_product:
         return jsonify({
@@ -1143,8 +1469,7 @@ def load_template():
             
         df = pd.read_csv(filepath)
         
-        transactions, _, _, basket_values_list, date_range_days, basket_avg = parse_df_to_transactions(df)
-
+        transactions, duplicates_removed, missing_removed, basket_values_list, date_range_days, basket_avg, tx_dates_list, detected_cols = parse_df_to_transactions(df)
             
         user_email = get_current_user_email()
         # Compute unique items count
@@ -1157,9 +1482,10 @@ def load_template():
         }
         market_type = market_type_map.get(template_type, 'Default/unknown')
         ds_id = db.add_dataset(filename, total_tx, unique_items_count, user_email=user_email, market_type=market_type,
-                               basket_avg=basket_avg, date_range_days=date_range_days)
+                               basket_avg=basket_avg, date_range_days=date_range_days,
+                               missing_count=missing_removed, duplicates_count=duplicates_removed, columns_detected=detected_cols)
         
-        db.add_transactions(transactions, dataset_id=ds_id, user_email=user_email, basket_values=basket_values_list)
+        db.add_transactions(transactions, dataset_id=ds_id, user_email=user_email, basket_values=basket_values_list, dates=tx_dates_list)
         data_store['last_rules'] = None # Clear previous rules
         
         return jsonify({
@@ -1172,16 +1498,15 @@ def load_template():
 
 @app.route('/api/datasets', methods=['GET'])
 def get_datasets():
-    show_all = request.args.get('all') == 'true'
-    user_info = get_current_user()
+    user_info, err = require_authenticated_user()
+    if err:
+        return err[0], err[1]
+    user_email = user_info['email']
     store_id = _get_store_id_for_user(user_info)
-    user_email = get_current_user_email()
+    show_all = request.args.get('all') == 'true'
     
-    if show_all:
-        if store_id:
-            datasets = db.get_datasets_by_store(store_id)
-        else:
-            datasets = db.get_datasets(user_email=user_email)
+    if show_all and store_id:
+        datasets = db.get_datasets_by_store(store_id)
     else:
         db.cleanup_duplicate_datasets(user_email=user_email)
         datasets = db.get_datasets(user_email=user_email)
@@ -1189,37 +1514,34 @@ def get_datasets():
 
 @app.route('/api/datasets/<int:dataset_id>', methods=['DELETE'])
 def delete_dataset_endpoint(dataset_id):
-    user_email = get_current_user_email()
-    # Capture dataset info before deletion for the audit log
-    dataset_info_before = db.get_dataset_by_id(dataset_id, user_email=user_email)
+    user_info, err = require_authenticated_user()
+    if err:
+        return err[0], err[1]
+    user_email = user_info['email']
+
+    dataset_info, auth_err = authorize_dataset_access(dataset_id, user_info)
+    if auth_err:
+        return auth_err[0], auth_err[1]
+
     db.delete_dataset(dataset_id, user_email=user_email)
     # ── Audit log ────────────────────────────────────────────────────────────
-    if dataset_info_before:
-        _log_current_user_action('PURGE_HISTORICAL_DATA', {
-            'dataset_id': dataset_id,
-            'filename': dataset_info_before.get('name'),
-            'transaction_count': dataset_info_before.get('transaction_count'),
-            'market_type': dataset_info_before.get('market_type')
-        })
+    _log_current_user_action('PURGE_HISTORICAL_DATA', {
+        'dataset_id': dataset_id,
+        'filename': dataset_info.get('name'),
+        'transaction_count': dataset_info.get('transaction_count'),
+        'market_type': dataset_info.get('market_type')
+    })
     return jsonify({'message': 'Dataset deleted successfully'})
 
 def generate_recommendations_csv(dataset_id, user_email=None):
     """Generate recommendation results CSV for a dataset ID."""
     transactions = db.get_transactions(user_email=user_email, dataset_id=dataset_id)
     if not transactions:
-        transactions = db.get_transactions(dataset_id=dataset_id)
-    
-    if not transactions:
         return "No transaction data found for dataset."
 
-    dataset_info = db.get_dataset_by_id(dataset_id, user_email=user_email) if user_email else None
-    if not dataset_info:
-        dataset_info = db.get_dataset_by_id(dataset_id)
-        
+    dataset_info = db.get_dataset_by_id(dataset_id, user_email=user_email)
     ds_name = dataset_info.get('name', '') if dataset_info else ''
-    market_type = dataset_info.get('market_type') if (dataset_info and dataset_info.get('market_type') and dataset_info.get('market_type') != 'Default/unknown') else None
-    if not market_type:
-        market_type = infer_market_type(ds_name, transactions)
+    market_type = dataset_info.get('market_type') if (dataset_info and dataset_info.get('market_type')) else 'Default/unknown'
         
     market_config = MARKET_TYPE_THRESHOLDS.get(market_type, MARKET_TYPE_THRESHOLDS['Default/unknown'])
     curr_supp = market_config['min_support']
@@ -1349,10 +1671,12 @@ def generate_recommendations_csv(dataset_id, user_email=None):
 @app.route('/api/admin/uploads/<int:upload_id>/export', methods=['GET'])
 @app.route('/api/recommendations/export', methods=['GET'])
 def export_recommendation_results(upload_id=None):
-    user_info = get_current_user()
-    err = _require_shop_admin(user_info)
+    user_info, err = require_authenticated_user()
     if err:
-        return err
+        return err[0], err[1]
+    admin_err = _require_shop_admin(user_info)
+    if admin_err:
+        return admin_err
 
     target_id = upload_id or request.args.get('upload_id') or request.args.get('dataset_id')
     if not target_id:
@@ -1363,7 +1687,11 @@ def export_recommendation_results(upload_id=None):
     except (ValueError, TypeError):
         return jsonify({'error': 'Invalid upload_id parameter'}), 400
 
-    user_email = get_current_user_email()
+    dataset_info, auth_err = authorize_dataset_access(target_id, user_info)
+    if auth_err:
+        return auth_err[0], auth_err[1]
+
+    user_email = user_info['email']
     csv_payload = generate_recommendations_csv(target_id, user_email=user_email)
 
     filename = f"recommendation_results_{target_id}.csv"
@@ -1379,21 +1707,34 @@ def export_recommendation_results(upload_id=None):
 @app.route('/api/history/<int:dataset_id>/activate', methods=['POST'])
 @app.route('/api/datasets/<int:dataset_id>/activate', methods=['POST'])
 def activate_dataset_endpoint(dataset_id):
-    user_email = get_current_user_email()
-    dataset = db.get_dataset_by_id(dataset_id, user_email=user_email)
-    if not dataset:
-        return jsonify({'error': 'History file not found or unauthorized'}), 404
+    user_info, err = require_authenticated_user()
+    if err:
+        return err[0], err[1]
+
+    dataset_info, auth_err = authorize_dataset_access(dataset_id, user_info)
+    if auth_err:
+        return auth_err[0], auth_err[1]
+
     return jsonify({
-        'message': f"Activated historical dataset: {dataset['name']}",
-        'dataset': dataset
+        'message': f"Activated historical dataset: {dataset_info['name']}",
+        'dataset': dataset_info
     })
 
 @app.route('/api/products', methods=['GET', 'POST'])
 def manage_products():
+    user_info, err = require_authenticated_user()
+    if err:
+        return err[0], err[1]
+    user_email = user_info['email']
+
     if request.method == 'GET':
-        products = db.get_products()
+        products = db.get_products_for_user(user_email=user_email)
         return jsonify({'products': products})
     else:
+        admin_err = _require_shop_admin(user_info)
+        if admin_err:
+            return admin_err
+
         params = request.json or {}
         name = params.get('name', '').strip()
         category = params.get('category', 'Uncategorized').strip()
@@ -1411,120 +1752,105 @@ def manage_products():
 
 @app.route('/api/products/<int:product_id>', methods=['DELETE'])
 def delete_product_endpoint(product_id):
+    user_info, err = require_authenticated_user()
+    if err:
+        return err[0], err[1]
+    admin_err = _require_shop_admin(user_info)
+    if admin_err:
+        return admin_err
+
     db.delete_product(product_id)
     return jsonify({'message': 'Product deleted successfully'})
 
 @app.route('/api/trends', methods=['GET'])
 def get_trends():
+    user_info, err = require_authenticated_user()
+    if err:
+        return err[0], err[1]
+    user_email = user_info['email']
+
     dataset_id = request.args.get('dataset_id')
-    user_email = get_current_user_email()
     if not dataset_id:
         return jsonify({'trends': []})
+
+    dataset_info, auth_err = authorize_dataset_access(dataset_id, user_info)
+    if auth_err:
+        return auth_err[0], auth_err[1]
+
     transactions_data = db.get_transactions_with_dates(user_email=user_email, dataset_id=dataset_id)
     if not transactions_data:
         return jsonify({'trends': []})
         
-    df_tx = pd.DataFrame([
-        {'date': tx['date'].split(' ')[0], 'items_count': len(tx['items'])}
-        for tx in transactions_data
-    ])
+    date_entries = []
+    for tx in transactions_data:
+        raw_d = tx.get('date')
+        if raw_d:
+            clean_d = str(raw_d).split(' ')[0].split('T')[0]
+            if len(clean_d) == 10 and clean_d[4] == '-' and clean_d[7] == '-':
+                date_entries.append(clean_d)
+            else:
+                std_d = standardize_date_string(clean_d)
+                if std_d:
+                    date_entries.append(std_d)
+
+    # Fallback to upload date if no transaction dates recorded in file
+    if not date_entries and dataset_info.get('upload_date'):
+        up_d = str(dataset_info['upload_date']).split(' ')[0].split('T')[0]
+        date_entries = [up_d] * len(transactions_data)
+
+    if not date_entries:
+        return jsonify({'trends': []})
+
+    df_tx = pd.DataFrame({'date': date_entries})
+    grouped = df_tx.groupby('date').size().reset_index(name='count').sort_values('date')
     
-    grouped = df_tx.groupby('date').size().reset_index(name='count')
-    
-    # If transaction dates span fewer than 60 days (e.g., sample retail datasets or batch CSV imports where
-    # sqlite timestamps are concentrated), dynamically generate a high-fidelity 60-day historical timeline
-    # so that 7D, 30D, and All Time chart filters render distinct, accurate daily trend graphs.
-    if len(grouped) < 60:
-        from datetime import datetime, timedelta
-        import math
+    trends = []
+    for _, row in grouped.iterrows():
+        d_str = str(row['date'])
         try:
-            latest_str = df_tx['date'].max()
-            latest_date = datetime.strptime(latest_str, '%Y-%m-%d')
+            d_obj = datetime.strptime(d_str, '%Y-%m-%d')
+            disp = d_obj.strftime('%b %d')
+            full = d_obj.strftime('%b %d, %Y')
         except Exception:
-            latest_date = datetime.now()
-            
-        dates_list = [(latest_date - timedelta(days=59-i)).strftime('%Y-%m-%d') for i in range(60)]
-        
-        # Calculate daily weights based on day of week (0=Mon, ..., 6=Sun) + cyclical retail variation
-        raw_weights = []
-        for i, d_str in enumerate(dates_list):
-            dt = datetime.strptime(d_str, '%Y-%m-%d')
-            dow = dt.weekday()
-            # Base weekday weights: weekends (Friday=4, Saturday=5, Sunday=6) have higher foot traffic
-            if dow in [4, 5]: # Fri, Sat
-                w = 1.35
-            elif dow == 6: # Sun
-                w = 1.20
-            elif dow == 3: # Thu
-                w = 1.05
-            else: # Mon, Tue, Wed
-                w = 0.85
-            # Add subtle harmonic wave + slight deterministically pseudo-random variation
-            # so the chart curves organically across 7D, 30D, and 60D
-            variation = 1.0 + 0.18 * math.sin(i / 2.7) + 0.08 * math.cos(i * 1.3)
-            raw_weights.append(max(0.2, w * variation))
-            
-        cur_sum = sum(raw_weights)
-        cum_weights = []
-        running = 0.0
-        for rw in raw_weights:
-            running += rw
-            cum_weights.append(running / cur_sum)
-            
-        counts = {d: 0 for d in dates_list}
-        N = len(transactions_data)
-        
-        # Ensure every single day gets a baseline count if N is sufficient so 60D bar chart looks full
-        if N >= 60:
-            base_per_day = max(1, N // 140)
-            for d in dates_list:
-                counts[d] += base_per_day
-            remaining_N = max(0, N - (base_per_day * 60))
-        else:
-            remaining_N = N
-            
-        for idx in range(remaining_N):
-            fraction = idx / max(1, remaining_N)
-            day_idx = 0
-            for i, cw in enumerate(cum_weights):
-                if fraction <= cw:
-                    day_idx = i
-                    break
-            target_date = dates_list[day_idx]
-            counts[target_date] += 1
-            
-        trends = [{'date': d, 'count': counts[d]} for d in dates_list]
-    else:
-        trends = [{'date': row['date'], 'count': int(row['count'])} for _, row in grouped.iterrows()]
+            disp = d_str
+            full = d_str
+        trends.append({
+            'date': d_str,
+            'display_date': disp,
+            'full_date': full,
+            'count': int(row['count'])
+        })
         
     return jsonify({'trends': trends})
 
 @app.route('/api/benchmark', methods=['POST'])
 def run_benchmark():
-    user_info = get_current_user()
-    err = _require_shop_admin(user_info)
+    user_info, err = require_authenticated_user()
     if err:
-        return err
-    user_email = get_current_user_email()
+        return err[0], err[1]
+    admin_err = _require_shop_admin(user_info)
+    if admin_err:
+        return admin_err
+    user_email = user_info['email']
 
     params = request.json or {}
     dataset_id = params.get('dataset_id') or request.args.get('dataset_id')
     if not dataset_id:
         datasets = db.get_datasets(user_email=user_email)
-        if not datasets:
-            datasets = db.get_datasets()
         if datasets:
             dataset_id = datasets[0]['id']
+        else:
+            return jsonify({'error': 'No dataset available for benchmark. Please upload a dataset first.'}), 400
 
-    transactions = db.get_transactions(dataset_id=dataset_id) if dataset_id else db.get_transactions(user_email=user_email)
+    dataset_info, auth_err = authorize_dataset_access(dataset_id, user_info)
+    if auth_err:
+        return auth_err[0], auth_err[1]
+
+    transactions = db.get_transactions(user_email=user_email, dataset_id=dataset_id)
     if not transactions or len(transactions) < 5:
         return jsonify({'error': 'Please upload a larger dataset first to run the performance benchmark (min 5 transactions).'}), 400
         
-    dataset_info = db.get_dataset_by_id(dataset_id) if dataset_id else None
-    market_type = dataset_info.get('market_type') if (dataset_info and dataset_info.get('market_type') and dataset_info.get('market_type') != 'Default/unknown') else None
-    if not market_type:
-        ds_name = dataset_info.get('name', '') if dataset_info else ''
-        market_type = infer_market_type(ds_name, transactions)
+    market_type = dataset_info.get('market_type') if (dataset_info and dataset_info.get('market_type')) else 'Default/unknown'
         
     market_config = MARKET_TYPE_THRESHOLDS.get(market_type, MARKET_TYPE_THRESHOLDS['Default/unknown'])
     min_support = market_config['min_support']

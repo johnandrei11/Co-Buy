@@ -1,0 +1,27 @@
+# Python Virtual Environment
+backend/.venv/
+.venv/
+venv/
+ENV/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+
+# Logs & temp files
+*.log
+backend/backend_err.txt
+backend/backend_out.txt
+
+# OS & Editor
+.DS_Store
+.idea/
+.vscode/
