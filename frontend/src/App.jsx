@@ -36,6 +36,18 @@ import Login, { PendingActivation, JoinPage } from './pages/Login';
 import ActivityLog from './pages/ActivityLog';
 import Logo from './components/Logo';
 import GlobalNavbarSearch from './components/GlobalNavbarSearch';
+import AdminLayout from './components/admin/AdminLayout';
+import UserLayout from './components/UserLayout';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminBusinesses from './pages/admin/AdminBusinesses';
+import AdminUsers from './pages/admin/AdminUsers';
+import AdminDatasets from './pages/admin/AdminDatasets';
+import AdminAnalysisHistory from './pages/admin/AdminAnalysisHistory';
+import AdminEvaluations from './pages/admin/AdminEvaluations';
+import AdminAuditLogs from './pages/admin/AdminAuditLogs';
+import AdminSettings from './pages/admin/AdminSettings';
+import AdminProfile from './pages/admin/AdminProfile';
+import { AdminThemeProvider } from './context/AdminThemeContext';
 import './index.css';
 import axios from 'axios';
 
@@ -615,13 +627,27 @@ function App() {
 
   const [showInvitePanel, setShowInvitePanel] = useState(false);
 
-  const isAdmin = user?.role === 'shop_admin';
-  const isUnlinkedMember = user?.role === 'team_member' && !user?.store_id;
+  const isSystemAdmin = user?.role === 'system_admin';
+  const isAdmin = user?.role === 'shop_admin' || user?.role === 'business_admin';
+  const isUnlinkedMember = (user?.role === 'team_member' || user?.role === 'staff') && !user?.store_id;
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    const handleThemeChange = (e) => {
+      const nextTheme = e.detail;
+      if (nextTheme && (nextTheme === 'dark' || nextTheme === 'light')) {
+        setTheme(prev => (prev !== nextTheme ? nextTheme : prev));
+      }
+    };
+    window.addEventListener('theme-change', handleThemeChange);
+    return () => {
+      window.removeEventListener('theme-change', handleThemeChange);
+    };
+  }, []);
 
   useEffect(() => {
     const handleSessionExpired = () => {
@@ -641,8 +667,17 @@ function App() {
     };
   }, []);
 
-  const handleToggleTheme = () => {
-    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
+  const handleToggleTheme = (explicitNextTheme) => {
+    const current = document.documentElement.getAttribute('data-theme') || theme || 'dark';
+    const next = typeof explicitNextTheme === 'string'
+      ? explicitNextTheme
+      : (current === 'dark' ? 'light' : 'dark');
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+    setTheme(next);
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('theme-change', { detail: next }));
+    }, 0);
   };
 
   const handleLogin = (token, userData) => {
@@ -673,62 +708,47 @@ function App() {
           <Route path="/login" element={<Login onLogin={handleLogin} />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
+      ) : isSystemAdmin ? (
+        <AdminThemeProvider>
+          <AdminLayout user={user} onLogout={handleLogout}>
+            <Routes>
+              <Route path="/admin" element={<AdminDashboard />} />
+              <Route path="/admin/businesses" element={<AdminBusinesses />} />
+              <Route path="/admin/users" element={<AdminUsers />} />
+              <Route path="/admin/datasets" element={<AdminDatasets />} />
+              <Route path="/admin/analysis-history" element={<AdminAnalysisHistory />} />
+              <Route path="/admin/evaluations" element={<AdminEvaluations />} />
+              <Route path="/admin/audit-logs" element={<AdminAuditLogs />} />
+              <Route path="/admin/settings" element={<AdminSettings />} />
+              <Route path="/admin/profile" element={<AdminProfile user={user} onUpdateUser={setUser} />} />
+              <Route path="*" element={<Navigate to="/admin" replace />} />
+            </Routes>
+          </AdminLayout>
+        </AdminThemeProvider>
       ) : (
-        <div style={{ display: 'flex', width: '100%', minHeight: '100vh' }}>
+        <UserLayout
+          user={user}
+          theme={theme}
+          onToggleTheme={handleToggleTheme}
+          onLogout={handleLogout}
+          onLogin={handleLogin}
+          onOpenInvite={() => setShowInvitePanel(true)}
+        >
           {showInvitePanel && (
             <InvitePanel user={user} onClose={() => setShowInvitePanel(false)} />
           )}
-          <Sidebar
-            onLogout={handleLogout}
-            user={user}
-            theme={theme}
-            onToggleTheme={handleToggleTheme}
-            onOpenInvite={() => setShowInvitePanel(true)}
-          />
-          <main className="main-content" style={{ paddingTop: '6rem' }}>
-            {/* Global Top Navbar matching Reference Screens A & B */}
-            <header className="cobuy-top-navbar">
-              <GlobalNavbarSearch />
-
-              <div className="cobuy-top-right-group">
-                <button
-                  id="theme-toggle-btn"
-                  onClick={handleToggleTheme}
-                  className="cobuy-top-icon-btn"
-                  title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} mode`}
-                >
-                  {theme === 'dark' ? (
-                    <Sun size={17} style={{ color: '#f59e0b' }} />
-                  ) : (
-                    <Moon size={17} style={{ color: '#6366f1' }} />
-                  )}
-                </button>
-                <NotificationBell user={user} onLogin={handleLogin} />
-
-                <NavLink to="/profile" className="cobuy-user-header-pill">
-                  <div className="cobuy-user-avatar">
-                    {(user?.full_name || user?.name || user?.email || 'JA').charAt(0).toUpperCase()}
-                  </div>
-                  <span className="cobuy-user-name">
-                    {user?.full_name || user?.name || (user?.email ? user.email.split('@')[0] : 'John Andreil')}
-                  </span>
-                  <ChevronDown size={14} style={{ color: 'var(--text-dim)' }} />
-                </NavLink>
-              </div>
-            </header>
-            <Routes>
-              <Route path="/" element={isAdmin ? <ActivityLog /> : <Dashboard />} />
-              <Route path="/analytics" element={!isAdmin ? <Analytics /> : <Navigate to="/" replace />} />
-              <Route path="/evaluation" element={user?.role === 'shop_admin' ? <Evaluation /> : <Navigate to="/" replace />} />
-              <Route path="/history" element={!isAdmin ? <Dataset /> : <Navigate to="/" replace />} />
-              <Route path="/data" element={<Navigate to="/history" replace />} />
-              <Route path="/audit-log" element={<Navigate to="/" replace />} />
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/profile" element={<Profile user={user} />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </main>
-        </div>
+          <Routes>
+            <Route path="/" element={isAdmin ? <ActivityLog /> : <Dashboard />} />
+            <Route path="/analytics" element={!isAdmin ? <Analytics /> : <Navigate to="/" replace />} />
+            <Route path="/evaluation" element={user?.role === 'shop_admin' ? <Evaluation /> : <Navigate to="/" replace />} />
+            <Route path="/history" element={!isAdmin ? <Dataset /> : <Navigate to="/" replace />} />
+            <Route path="/data" element={<Navigate to="/history" replace />} />
+            <Route path="/audit-log" element={<Navigate to="/" replace />} />
+            <Route path="/settings" element={<SettingsPage user={user} theme={theme} onThemeChange={setTheme} />} />
+            <Route path="/profile" element={<Profile user={user} />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </UserLayout>
       )}
     </Router>
   );

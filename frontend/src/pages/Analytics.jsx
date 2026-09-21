@@ -6,13 +6,16 @@ import {
   RotateCcw,
   Sliders,
   Calendar,
-  Sparkles
+  Sparkles,
+  Filter,
+  Loader2
 } from 'lucide-react';
 
 import AnalyticsSetupState from '../components/analytics/AnalyticsSetupState';
 import SampleFileModal from '../components/analytics/SampleFileModal';
 import ItemFrequencies from '../components/analytics/ItemFrequencies';
 import RecommendationsView from '../components/analytics/RecommendationsView';
+import CategoryFilterBar from '../components/analytics/CategoryFilterBar';
 import MiningParametersModal from '../components/analytics/MiningParametersModal';
 import MiningEngineModal from '../components/analytics/MiningEngineModal';
 import '../components/analytics/analytics.css';
@@ -118,10 +121,73 @@ const Analytics = () => {
   });
   const [showMiningModal, setShowMiningModal] = useState(false);
   const [showParamsModal, setShowParamsModal] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [selectedCategories, setSelectedCategories] = useState(['All']);
+  const [selectedCartProducts, setSelectedCartProducts] = useState([]);
   const [coBoughtResults, setCoBoughtResults] = useState([]);
   const [loadingCoBought, setLoadingCoBought] = useState(false);
   const [recommendationSearchTerm, setRecommendationSearchTerm] = useState('');
+
+  // Dynamically derived unique categories from the uploaded dataset
+  const categoryOptions = React.useMemo(() => {
+    const cats = new Set();
+    if (Array.isArray(stats?.categories)) {
+      stats.categories.forEach(c => {
+        if (c && typeof c === 'string' && c.trim() && c.trim().toLowerCase() !== 'uncategorized') {
+          cats.add(c.trim());
+        }
+      });
+    }
+    if (Array.isArray(results?.categories)) {
+      results.categories.forEach(c => {
+        if (c && typeof c === 'string' && c.trim() && c.trim().toLowerCase() !== 'uncategorized') {
+          cats.add(c.trim());
+        }
+      });
+    }
+    if (Array.isArray(stats?.all_items)) {
+      stats.all_items.forEach(it => {
+        if (it?.category && typeof it.category === 'string' && it.category.trim() && it.category.trim().toLowerCase() !== 'uncategorized') {
+          cats.add(it.category.trim());
+        }
+      });
+    }
+    return Array.from(cats).sort((a, b) => a.localeCompare(b));
+  }, [stats?.categories, results?.categories, stats?.all_items]);
+
+  useEffect(() => {
+    if (selectedCategories && selectedCategories.length > 0 && !selectedCategories.includes('All')) {
+      const valid = selectedCategories.filter(c =>
+        categoryOptions.some(opt => opt.toLowerCase() === c.toLowerCase())
+      );
+      if (valid.length === 0) {
+        setSelectedCategories(['All']);
+      } else if (valid.length !== selectedCategories.length) {
+        setSelectedCategories(valid);
+      }
+    }
+  }, [categoryOptions]);
+
+  const productCategoriesMap = React.useMemo(() => {
+    const map = {};
+    if (stats?.product_categories) {
+      Object.entries(stats.product_categories).forEach(([k, v]) => {
+        if (k && v) map[k.toLowerCase()] = v;
+      });
+    }
+    if (results?.product_categories) {
+      Object.entries(results.product_categories).forEach(([k, v]) => {
+        if (k && v) map[k.toLowerCase()] = v;
+      });
+    }
+    if (Array.isArray(stats?.all_items)) {
+      stats.all_items.forEach(it => {
+        if (it?.name && it?.category) {
+          map[it.name.toLowerCase()] = it.category;
+        }
+      });
+    }
+    return map;
+  }, [stats?.product_categories, results?.product_categories, stats?.all_items]);
 
   const toggleRuleExpand = (idx) => {
     setExpandedRules(prev => ({
@@ -338,19 +404,25 @@ const Analytics = () => {
     }
   };
 
-  const fetchCoBoughtTogether = async (productName, overrideDatasetId = null) => {
-    if (!productName) {
+  const fetchCoBoughtTogether = async (productSelection, overrideDatasetId = null) => {
+    const products = Array.isArray(productSelection)
+      ? productSelection.filter(Boolean)
+      : (productSelection ? [productSelection] : []);
+
+    if (products.length === 0) {
       setCoBoughtResults([]);
       return;
     }
     setLoadingCoBought(true);
     try {
       const targetId = overrideDatasetId || datasetId;
-      const url = targetId
-        ? `${API_BASE}/frequently_bought_together?product=${encodeURIComponent(productName)}&dataset_id=${targetId}`
-        : `${API_BASE}/frequently_bought_together?product=${encodeURIComponent(productName)}`;
-      const response = await axios.get(url);
-      if (response.data && response.data.frequently_bought_together) {
+      const params = new URLSearchParams();
+      products.forEach(p => params.append('product', p));
+      if (targetId) {
+        params.append('dataset_id', targetId);
+      }
+      const response = await axios.get(`${API_BASE}/frequently_bought_together?${params.toString()}`);
+      if (response.data && Array.isArray(response.data.frequently_bought_together)) {
         setCoBoughtResults(response.data.frequently_bought_together);
       } else {
         setCoBoughtResults([]);
@@ -363,15 +435,40 @@ const Analytics = () => {
     }
   };
 
+  const handleToggleCartProduct = (productName) => {
+    if (!productName) return;
+    setSelectedCartProducts(prev => {
+      const exists = prev.some(p => p.toLowerCase() === productName.toLowerCase());
+      const next = exists
+        ? prev.filter(p => p.toLowerCase() !== productName.toLowerCase())
+        : [...prev, productName];
+      fetchCoBoughtTogether(next);
+      return next;
+    });
+  };
+
+  const handleRemoveCartProduct = (productName) => {
+    setSelectedCartProducts(prev => {
+      const next = prev.filter(p => p.toLowerCase() !== productName.toLowerCase());
+      fetchCoBoughtTogether(next);
+      return next;
+    });
+  };
+
+  const handleClearCartProducts = () => {
+    setSelectedCartProducts([]);
+    setCoBoughtResults([]);
+  };
+
+  // Backward compatibility alias
   const handleSelectProduct = (productName) => {
-    setSelectedProduct(productName);
-    fetchCoBoughtTogether(productName);
+    handleToggleCartProduct(productName);
   };
 
   useEffect(() => {
     fetchStats();
-    if (selectedProduct) {
-      fetchCoBoughtTogether(selectedProduct, datasetId);
+    if (selectedCartProducts.length > 0) {
+      fetchCoBoughtTogether(selectedCartProducts, datasetId);
     }
   }, [datasetId]);
 
@@ -382,8 +479,8 @@ const Analytics = () => {
     }
     const p = searchParams.get('product');
     if (p) {
-      setSelectedProduct(p);
-      fetchCoBoughtTogether(p, datasetId);
+      setSelectedCartProducts([p]);
+      fetchCoBoughtTogether([p], datasetId);
     }
   }, [searchParams, datasetId]);
 
@@ -391,6 +488,12 @@ const Analytics = () => {
   useEffect(() => {
     const currentDsId = datasetId || localStorage.getItem('activeDatasetId');
     if (currentDsId) {
+      setForceSetupView(false);
+      const dsName = localStorage.getItem('activeDatasetName') || sessionStorage.getItem('analytics_file_name');
+      if (dsName) {
+        setFile({ name: dsName });
+        setUploadStatus('success');
+      }
       const hasMinedForThisDataset = results && String(results.dataset_id) === String(currentDsId);
       if (!hasMinedForThisDataset && miningStatus !== 'mining') {
         runMining({ dataset_id: currentDsId });
@@ -471,7 +574,8 @@ const Analytics = () => {
       setResults(null);
       setMiningStatus('idle');
       setCleaningStats(null);
-      setSelectedProduct(null);
+      setSelectedCategory('All');
+      setSelectedCartProducts([]);
       setCoBoughtResults([]);
       setForceSetupView(false);
       sessionStorage.removeItem('analytics_file_name');
@@ -497,8 +601,8 @@ const Analytics = () => {
   const runMining = async (overrideParams = null) => {
     setMiningStatus('mining');
     try {
-      const activeParams = overrideParams || params;
-      const targetDatasetId = (overrideParams && overrideParams.dataset_id) || datasetId || localStorage.getItem('activeDatasetId');
+      const activeParams = { ...params, ...(overrideParams || {}) };
+      const targetDatasetId = activeParams.dataset_id || datasetId || localStorage.getItem('activeDatasetId');
       const payload = {
         ...activeParams,
         min_support: parseFloat(activeParams.min_support) || 0.05,
@@ -514,18 +618,18 @@ const Analytics = () => {
       setResults(minedData);
       sessionStorage.setItem('analytics_results', JSON.stringify(minedData));
       if (targetDatasetId) {
-        localStorage.setItem('activeDatasetId', targetDatasetId);
-        if (activeDatasetName) {
-          localStorage.setItem('activeDatasetName', activeDatasetName);
-        } else if (file && file.name) {
-          localStorage.setItem('activeDatasetName', file.name);
-        }
+        localStorage.setItem('activeDatasetId', String(targetDatasetId));
+        const dsName = localStorage.getItem('activeDatasetName') || (file && file.name) || response.data.dataset_name || `Dataset #${targetDatasetId}`;
+        localStorage.setItem('activeDatasetName', dsName);
+        sessionStorage.setItem('analytics_file_name', dsName);
+        setFile({ name: dsName });
+        setUploadStatus('success');
       }
       setMiningStatus('success');
       setForceSetupView(false);
     } catch (err) {
       setMiningStatus('error');
-      console.error(err);
+      console.error('Error running mining:', err);
     }
   };
 
@@ -610,9 +714,31 @@ const Analytics = () => {
     return consolidated;
   };
 
+  // Raw recommendations (never mutated)
   const consolidatedRules = consolidateRules();
 
-  const filteredConsolidatedRules = consolidatedRules.filter(rule => {
+  // Scoped Category Filter: Recommendations — 'If They Buy…' — filter according to the category of the product(s) in the 'If They Buy…' side
+  const categoryFilteredRules = React.useMemo(() => {
+    if (
+      !selectedCategories ||
+      selectedCategories.includes('All') ||
+      selectedCategories.length === categoryOptions.length
+    ) {
+      return consolidatedRules;
+    }
+    if (selectedCategories.length === 0) {
+      return [];
+    }
+    const catSet = new Set(selectedCategories.map(c => c.toLowerCase()));
+    return consolidatedRules.filter(rule => {
+      return (rule.antecedents || []).some(ant => {
+        const antCat = productCategoriesMap[ant.toLowerCase()] || '';
+        return catSet.has(antCat.toLowerCase());
+      });
+    });
+  }, [consolidatedRules, selectedCategories, categoryOptions.length, productCategoriesMap]);
+
+  const filteredConsolidatedRules = categoryFilteredRules.filter(rule => {
     if (!recommendationSearchTerm.trim()) return true;
     const term = recommendationSearchTerm.trim().toLowerCase();
     const antMatch = (rule.antecedents || []).some(a => a.toLowerCase().includes(term));
@@ -621,6 +747,7 @@ const Analytics = () => {
     return antMatch || consMatch || tieMatch;
   });
 
+  // Raw combos (never mutated)
   const getGroupedItemsets = () => {
     if (!results || !results.frequent_itemsets) return [];
 
@@ -652,7 +779,32 @@ const Analytics = () => {
 
   const groupedSets = getGroupedItemsets();
 
-  const filteredGroupedSets = groupedSets.map(group => {
+  // Scoped Category Filter: Common Item Combos — First Product — filter according to the category of the first/primary product
+  // (Do not force second, third, or later products into that category)
+  const categoryFilteredGroupedSets = React.useMemo(() => {
+    if (
+      !selectedCategories ||
+      selectedCategories.includes('All') ||
+      selectedCategories.length === categoryOptions.length
+    ) {
+      return groupedSets;
+    }
+    if (selectedCategories.length === 0) {
+      return [];
+    }
+    const catSet = new Set(selectedCategories.map(c => c.toLowerCase()));
+    return groupedSets.map(group => {
+      const matchingItems = group.items.filter(item => {
+        const firstItem = item.items && item.items[0];
+        if (!firstItem) return false;
+        const firstCat = productCategoriesMap[firstItem.toLowerCase()] || '';
+        return catSet.has(firstCat.toLowerCase());
+      });
+      return { ...group, items: matchingItems };
+    }).filter(group => group.items.length > 0);
+  }, [groupedSets, selectedCategories, categoryOptions.length, productCategoriesMap]);
+
+  const filteredGroupedSets = categoryFilteredGroupedSets.map(group => {
     if (!recommendationSearchTerm.trim()) return group;
     const term = recommendationSearchTerm.trim().toLowerCase();
     const matchingItems = group.items.filter(item =>
@@ -662,6 +814,27 @@ const Analytics = () => {
   }).filter(group => group.items.length > 0);
 
   const hasActiveSource = Boolean((file || datasetId) && (stats.active || stats.total_transactions > 0 || uploadStatus === 'uploading'));
+
+  if (miningStatus === 'mining') {
+    return (
+      <div className="cobuy-analytics-container fade-in">
+        <div className="cobuy-analytics-loading-card">
+          <div className="cobuy-analytics-loading-icon">
+            <Loader2 size={42} className="spin" style={{ color: '#4f46e5' }} />
+          </div>
+          <h2 className="cobuy-analytics-loading-title">
+            Analyzing {activeDatasetName || file?.name || (datasetId ? `Dataset #${datasetId}` : 'Sales Data')}...
+          </h2>
+          <p className="cobuy-analytics-loading-subtitle">
+            Running association rule mining, extracting frequent product combos, and calculating metrics.
+          </p>
+          <div className="cobuy-analytics-loading-bar">
+            <div className="cobuy-analytics-loading-fill"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!hasResults || forceSetupView) {
     return (
@@ -794,18 +967,30 @@ const Analytics = () => {
         </div>
       )}
 
+      {/* ── Category Filter Bar (Popout Panel UI) ──────────────────── */}
+      {categoryOptions.length > 0 && (
+        <CategoryFilterBar
+          categoryOptions={categoryOptions}
+          selectedCategories={selectedCategories}
+          onChangeSelectedCategories={setSelectedCategories}
+          productCategoriesMap={productCategoriesMap}
+          stats={stats}
+          totalProductsCount={stats?.unique_items_count || stats?.all_items?.length || 0}
+        />
+      )}
+
       {/* ── 2. Middle Section: 3-Column Grid ── */}
       <ItemFrequencies
         stats={stats}
         results={results}
-        selectedProduct={selectedProduct}
-        onSelectProduct={handleSelectProduct}
+        selectedCategories={selectedCategories}
+        selectedCategory={selectedCategories[0] || 'All'}
+        selectedProducts={selectedCartProducts}
+        onToggleProduct={handleToggleCartProduct}
+        onRemoveProduct={handleRemoveCartProduct}
+        onClearProducts={handleClearCartProducts}
         coBoughtResults={coBoughtResults}
         loadingCoBought={loadingCoBought}
-        onClearSelectedProduct={() => {
-          setSelectedProduct(null);
-          setCoBoughtResults([]);
-        }}
       />
 
       {/* ── 3. Bottom Section: Full-Width Recommendations Table ── */}

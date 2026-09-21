@@ -58,6 +58,7 @@ const Dashboard = () => {
   const [trends, setTrends] = useState([]);
   const [rules, setRules] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingRules, setLoadingRules] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
   // Modals state
@@ -68,6 +69,18 @@ const Dashboard = () => {
 
   const activeDatasetId = stats.dataset_id || localStorage.getItem('activeDatasetId');
   const activeDatasetName = stats.dataset_name || localStorage.getItem('activeDatasetName');
+
+  const [isDark, setIsDark] = useState(() => document.documentElement.getAttribute('data-theme') === 'dark');
+
+  useEffect(() => {
+    const checkTheme = () => {
+      setIsDark(document.documentElement.getAttribute('data-theme') === 'dark');
+    };
+    checkTheme();
+    const observer = new MutationObserver(checkTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
 
   // ── Date Formatting Helpers (Dynamic & Adaptive) ──────────────────────────
   // Handles Excel serials, 8-digit numbers, YYYY/MM/DD, DD/MM/YYYY, MM/DD/YYYY, etc.
@@ -156,7 +169,7 @@ const Dashboard = () => {
     return `${mName} ${String(parsed.day).padStart(2, '0')}, ${parsed.year}`;
   };
 
-  // ── Fetch Dashboard Data ──────────────────────────────────────────────────
+  // ── Fetch Dashboard Data (Parallelized & Non-Blocking) ───────────────────
   const fetchDashboardData = async (targetId = null) => {
     setLoading(true);
     try {
@@ -181,8 +194,15 @@ const Dashboard = () => {
         return;
       }
 
-      // 1. Fetch Stats & Health
-      const statsRes = await axios.get(`${API_BASE}/stats?dataset_id=${idToFetch}`);
+      // 1. Fetch Stats & Trends in parallel (instantaneous)
+      const [statsRes, trendsRes] = await Promise.all([
+        axios.get(`${API_BASE}/stats?dataset_id=${idToFetch}`),
+        axios.get(`${API_BASE}/trends?dataset_id=${idToFetch}`).catch(e => {
+          console.error('Failed to fetch trends:', e);
+          return { data: { trends: [] } };
+        })
+      ]);
+
       if (!statsRes.data.active) {
         localStorage.removeItem('activeDatasetId');
         localStorage.removeItem('activeDatasetName');
@@ -208,17 +228,13 @@ const Dashboard = () => {
       if (statsRes.data.dataset_name) {
         localStorage.setItem('activeDatasetName', statsRes.data.dataset_name);
       }
+      setTrends(trendsRes.data.trends || []);
 
-      // 2. Fetch Trends (strictly real dataset dates)
-      try {
-        const trendsRes = await axios.get(`${API_BASE}/trends?dataset_id=${idToFetch}`);
-        setTrends(trendsRes.data.trends || []);
-      } catch (e) {
-        console.error('Failed to fetch trends:', e);
-        setTrends([]);
-      }
+      // Release main loading state immediately so overview & charts render instantly!
+      setLoading(false);
 
-      // 3. Fetch Discovered Patterns Count (Adaptive Mining)
+      // 2. Fetch Discovered Patterns Count asynchronously in the background
+      setLoadingRules(true);
       try {
         const mineRes = await axios.post(`${API_BASE}/mine`, {
           dataset_id: idToFetch,
@@ -228,14 +244,17 @@ const Dashboard = () => {
       } catch (e) {
         console.error('Failed to fetch rules count:', e);
         setRules([]);
+      } finally {
+        setLoadingRules(false);
       }
+
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
       setStats(prev => ({ ...prev, active: false }));
       setTrends([]);
       setRules([]);
-    } finally {
       setLoading(false);
+      setLoadingRules(false);
     }
   };
 
@@ -526,14 +545,20 @@ const Dashboard = () => {
     };
   }, [trends]);
 
-  // Custom Chart Tooltip (Floating Royal Purple Bubble)
+  // Custom Chart Tooltip (Floating Adaptive Bubble)
   const CustomChartTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="cobuy-chart-tooltip">
-          <div className="cobuy-tooltip-date">{data.fullDate || data.displayDate}</div>
-          <div className="cobuy-tooltip-count">
+        <div className="cobuy-chart-tooltip" style={{
+          background: isDark ? '#1e293b' : '#4f46e5',
+          border: isDark ? '1px solid #334155' : 'none',
+          boxShadow: isDark ? '0 8px 24px rgba(0,0,0,0.6)' : '0 4px 14px rgba(79, 70, 229, 0.35)'
+        }}>
+          <div className="cobuy-tooltip-date" style={{ color: isDark ? '#cbd5e1' : '#e0e7ff' }}>
+            {data.fullDate || data.displayDate}
+          </div>
+          <div className="cobuy-tooltip-count" style={{ color: '#ffffff' }}>
             <span className="cobuy-tooltip-dot" />
             {data.count.toLocaleString()} transactions
           </div>
@@ -836,11 +861,15 @@ const Dashboard = () => {
                 <span className="cobuy-kpi-label">Buying Patterns</span>
               </div>
               <div className="cobuy-kpi-value">
-                {rules.length}
+                {loadingRules ? (
+                  <RefreshCw size={20} className="spin" style={{ color: '#a855f7', display: 'inline-block' }} />
+                ) : (
+                  rules.length
+                )}
               </div>
               <div className="cobuy-kpi-footer">
                 <span className="cobuy-kpi-compare">
-                  {rules.length === 0 ? 'No strong patterns found' : `${rules.length} patterns discovered`}
+                  {loadingRules ? 'Analyzing patterns...' : rules.length === 0 ? 'No strong patterns found' : `${rules.length} patterns discovered`}
                 </span>
               </div>
             </div>
@@ -1143,24 +1172,24 @@ const Dashboard = () => {
                           <stop offset="100%" stopColor="#c7d2fe" stopOpacity={0.35} />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" strokeOpacity={0.8} />
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0'} strokeOpacity={0.8} />
                       <XAxis
                         dataKey="displayDate"
-                        axisLine={{ stroke: '#cbd5e1' }}
+                        axisLine={{ stroke: isDark ? '#334155' : '#cbd5e1' }}
                         tickLine={false}
-                        tick={{ fill: '#64748b', fontSize: 11, fontWeight: 500 }}
+                        tick={{ fill: isDark ? '#94a3b8' : '#64748b', fontSize: 11, fontWeight: 500 }}
                         interval={xAxisInterval}
                         label={{
                           value: chartGranularity === 'monthly' ? 'Month' : chartGranularity === 'weekly' ? 'Week' : 'Transaction Date',
                           position: 'insideBottom',
                           offset: -16,
-                          style: { fill: '#0f172a', fontSize: 12, fontWeight: 700 }
+                          style: { fill: isDark ? '#f8fafc' : '#0f172a', fontSize: 12, fontWeight: 700 }
                         }}
                       />
                       <YAxis
                         axisLine={false}
                         tickLine={false}
-                        tick={{ fill: '#64748b', fontSize: 11 }}
+                        tick={{ fill: isDark ? '#94a3b8' : '#64748b', fontSize: 11 }}
                         tickFormatter={(v) => v.toLocaleString()}
                         label={{
                           value: 'Number of Transactions',
@@ -1168,10 +1197,10 @@ const Dashboard = () => {
                           position: 'insideLeft',
                           offset: -12,
                           dy: 70,
-                          style: { fill: '#0f172a', fontSize: 12, fontWeight: 700, textAnchor: 'middle' }
+                          style: { fill: isDark ? '#f8fafc' : '#0f172a', fontSize: 12, fontWeight: 700, textAnchor: 'middle' }
                         }}
                       />
-                      <Tooltip content={<CustomChartTooltip />} cursor={{ fill: 'rgba(99, 102, 241, 0.04)' }} />
+                      <Tooltip content={<CustomChartTooltip />} cursor={{ fill: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(99, 102, 241, 0.04)' }} />
                       <Bar
                         dataKey="count"
                         fill="url(#cobuyBarGrad)"
@@ -1183,7 +1212,7 @@ const Dashboard = () => {
                             dataKey="count"
                             position="top"
                             formatter={(val) => val.toLocaleString()}
-                            style={{ fill: '#334155', fontSize: '11px', fontWeight: 600 }}
+                            style={{ fill: isDark ? '#cbd5e1' : '#334155', fontSize: '11px', fontWeight: 600 }}
                             dy={-4}
                           />
                         )}
@@ -1253,12 +1282,16 @@ const Dashboard = () => {
                   </div>
                   <div className="cobuy-insight-content">
                     <div className="cobuy-insight-text">
-                      {rules.length > 0
+                      {loadingRules
+                        ? 'Analyzing purchasing patterns...'
+                        : rules.length > 0
                         ? 'Strong purchasing patterns detected.'
                         : 'Limited purchasing patterns detected.'}
                     </div>
                     <div className="cobuy-insight-subtext">
-                      {rules.length > 0
+                      {loadingRules
+                        ? 'Evaluating product placements and association rules in the background...'
+                        : rules.length > 0
                         ? `${rules.length} association rules discovered for product placement & bundles.`
                         : 'The current dataset does not contain enough repeated product combinations to identify strong cross-selling patterns.'}
                     </div>

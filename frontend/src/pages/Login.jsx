@@ -222,6 +222,8 @@ const Login = ({ onLogin }) => {
   const [lockoutRemainingSeconds, setLockoutRemainingSeconds] = useState(0);
   const [attemptsRemaining, setAttemptsRemaining] = useState(null);
 
+  const [pendingApproval, setPendingApproval] = useState(null);
+
   const isCurrentEmailLocked = Boolean(
     !isRegister &&
     lockedEmail &&
@@ -285,12 +287,29 @@ const Login = ({ onLogin }) => {
         if (accountType === 'admin') payload.store_name = storeName;
         const response = await axios.post(`${API_BASE}/register`, payload);
 
+        if (response.data.pending) {
+          setPendingApproval({
+            message: response.data.message || 'Your registration is awaiting approval by the System Administrator.',
+            isBusiness: accountType === 'admin',
+            storeName: storeName
+          });
+          return;
+        }
+
         setSuccess('Account created successfully! Logging you in…');
         setTimeout(() => {
           onLogin(response.data.token, response.data.user);
         }, 1200);
       } else {
         const response = await axios.post(`${API_BASE}/login`, { email, password });
+        if (response.data.user?.business_status === 'Pending Approval' && response.data.user?.role !== 'system_admin') {
+          setPendingApproval({
+            message: 'Your business registration is currently under review by the System Administrator. Once approved, you will have full access to your business analytics workspace.',
+            isBusiness: true,
+            storeName: response.data.user?.store_name || 'Your Store'
+          });
+          return;
+        }
         setLockedEmail('');
         setLockoutRemainingSeconds(0);
         setAttemptsRemaining(null);
@@ -314,6 +333,92 @@ const Login = ({ onLogin }) => {
       setIsLoading(false);
     }
   };
+
+  if (pendingApproval) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        width: '100vw',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#050505',
+        backgroundImage: 'radial-gradient(ellipse at 50% -20%, rgba(245, 245, 245, 0.015) 0%, transparent 60%)'
+      }}>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="card"
+          style={{
+            width: '100%',
+            maxWidth: '460px',
+            padding: '2.5rem',
+            margin: '1.5rem',
+            textAlign: 'center',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.7), inset 1px 1px 0px 0px rgba(245,245,245,0.05)'
+          }}
+        >
+          <div style={{
+            width: 64,
+            height: 64,
+            borderRadius: '50%',
+            background: 'rgba(245, 158, 11, 0.12)',
+            border: '1px solid rgba(245, 158, 11, 0.25)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 1.5rem'
+          }}>
+            <Clock size={30} style={{ color: '#f59e0b' }} />
+          </div>
+
+          <h2 style={{
+            fontFamily: 'var(--font-heading)',
+            fontSize: '1.35rem',
+            fontWeight: 700,
+            color: 'var(--text-main)',
+            marginBottom: '0.75rem'
+          }}>
+            Registration Pending Approval
+          </h2>
+
+          <p style={{
+            color: 'var(--text-muted)',
+            fontSize: '0.9rem',
+            lineHeight: 1.6,
+            marginBottom: '1.5rem'
+          }}>
+            {pendingApproval.message}
+          </p>
+
+          <div style={{
+            background: 'rgba(245, 158, 11, 0.08)',
+            border: '1px solid rgba(245, 158, 11, 0.2)',
+            borderRadius: '8px',
+            padding: '1rem',
+            marginBottom: '1.75rem',
+            fontSize: '0.82rem',
+            color: '#f59e0b',
+            textAlign: 'left',
+            lineHeight: 1.5
+          }}>
+            <strong>Enterprise Onboarding Queue:</strong>
+            <div style={{ marginTop: '0.35rem' }}>
+              Your application has been routed to <strong>Businesses → Pending Requests</strong> for security review by a Platform System Administrator.
+            </div>
+          </div>
+
+          <button
+            onClick={() => setPendingApproval(null)}
+            className="btn btn-primary"
+            style={{ width: '100%', height: '44px' }}
+          >
+            Back to Sign In
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div style={{

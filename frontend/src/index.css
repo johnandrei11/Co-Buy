@@ -81,12 +81,12 @@
                  radial-gradient(circle at 85% 85%, rgba(124, 58, 237, 0.06) 0%, transparent 45%);
 }
 
-/* Auto-adapt inline white/#fff text color when in light mode (excluding buttons and their contents, and dark banner components) */
-[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *):not(.cobuy-dark-banner):not(.cobuy-dark-banner *)[style*="color: #fff"],
-[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *):not(.cobuy-dark-banner):not(.cobuy-dark-banner *)[style*="color: white"],
-[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *):not(.cobuy-dark-banner):not(.cobuy-dark-banner *)[style*="color: rgb(255, 255, 255)"],
-[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *):not(.cobuy-dark-banner):not(.cobuy-dark-banner *)[style*="color: '#fff'"],
-[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *):not(.cobuy-dark-banner):not(.cobuy-dark-banner *)[style*="color: 'white'"] {
+/* Auto-adapt inline white/#fff text color when in light mode (excluding buttons, dark banners, admin sidebar, and user sidebar) */
+[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *):not(.cobuy-dark-banner):not(.cobuy-dark-banner *):not(.admin-sidebar):not(.admin-sidebar *):not(.user-sidebar-overlay):not(.user-sidebar-overlay *)[style*="color: #fff"],
+[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *):not(.cobuy-dark-banner):not(.cobuy-dark-banner *):not(.admin-sidebar):not(.admin-sidebar *):not(.user-sidebar-overlay):not(.user-sidebar-overlay *)[style*="color: white"],
+[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *):not(.cobuy-dark-banner):not(.cobuy-dark-banner *):not(.admin-sidebar):not(.admin-sidebar *):not(.user-sidebar-overlay):not(.user-sidebar-overlay *)[style*="color: rgb(255, 255, 255)"],
+[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *):not(.cobuy-dark-banner):not(.cobuy-dark-banner *):not(.admin-sidebar):not(.admin-sidebar *):not(.user-sidebar-overlay):not(.user-sidebar-overlay *)[style*="color: '#fff'"],
+[data-theme="light"] *:not(button):not(button *):not(.btn):not(.btn *):not(.cobuy-dark-banner):not(.cobuy-dark-banner *):not(.admin-sidebar):not(.admin-sidebar *):not(.user-sidebar-overlay):not(.user-sidebar-overlay *)[style*="color: 'white'"] {
   color: var(--text-main) !important;
 }
 
@@ -99,32 +99,205 @@ button[style*="background: linear-gradient"] * {
   stroke: #ffffff !important;
 }
 
-[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *)[style*="color: rgba(255,255,255"],
-[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *)[style*="color: rgba(255, 255, 255"] {
+[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *):not(.admin-sidebar):not(.admin-sidebar *):not(.user-sidebar-overlay):not(.user-sidebar-overlay *)[style*="color: rgba(255,255,255"],
+[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *):not(.admin-sidebar):not(.admin-sidebar *):not(.user-sidebar-overlay):not(.user-sidebar-overlay *)[style*="color: rgba(255, 255, 255"] {
   color: var(--text-muted) !important;
 }
 
-/* Auto-adapt inline dark/white box backgrounds when in light mode (excluding dark banner) */
-[data-theme="light"] [style*="background: '#13151f'"],
-[data-theme="light"] [style*="background: #13151f"],
-[data-theme="light"] [style*="background: rgba(0, 0, 0, 0.1)"],
-[data-theme="light"] [style*="background: rgba(0, 0, 0, 0.25)"],
-[data-theme="light"] [style*="background: rgba(0, 0, 0, 0.2)"] {
+/* Auto-adapt inline dark/white box backgrounds when in light mode (excluding dark banner, admin sidebar, and user sidebar) */
+[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *):not(.admin-sidebar):not(.admin-sidebar *):not(.user-sidebar-overlay):not(.user-sidebar-overlay *)[style*="background: '#13151f'"],
+[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *):not(.admin-sidebar):not(.admin-sidebar *):not(.user-sidebar-overlay):not(.user-sidebar-overlay *)[style*="background: #13151f"],
+[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *):not(.admin-sidebar):not(.admin-sidebar *):not(.user-sidebar-overlay):not(.user-sidebar-overlay *)[style*="background: rgba(0, 0, 0, 0.1)"],
+[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *):not(.admin-sidebar):not(.admin-sidebar *):not(.user-sidebar-overlay):not(.user-sidebar-overlay *)[style*="background: rgba(0, 0, 0, 0.25)"],
+[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *):not(.admin-sidebar):not(.admin-sidebar *):not(.user-sidebar-overlay):not(.user-sidebar-overlay *)[style*="background: rgba(0, 0, 0, 0.2)"] {
   background: var(--table-bg) !important;
   border-color: var(--border-color) !important;
 }
 
-[data-theme="light"] [style*="background: rgba(255, 255, 255, 0.03)"],
-[data-theme="light"] [style*="background: rgba(255, 255, 255, 0.02)"],
-[data-theme="light"] [style*="background: rgba(255, 255, 255, 0.01)"] {
+[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *):not(.admin-sidebar):not(.admin-sidebar *):not(.user-sidebar-overlay):not(.user-sidebar-overlay *)[style*="background: rgba(255, 255, 255, 0.03)"],
+[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *):not(.admin-sidebar):not(.admin-sidebar *):not(.user-sidebar-overlay):not(.user-sidebar-overlay *)[style*="background: rgba(255, 255, 255, 0.02)"],
+[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *):not(.admin-sidebar):not(.admin-sidebar *):not(.user-sidebar-overlay):not(.user-sidebar-overlay *)[style*="background: rgba(255, 255, 255, 0.01)"] {
   background: var(--inner-box-bg) !important;
   border-color: var(--border-color) !important;
 }
 
-[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *)[style*="background: rgba(255,255,255,0.05)"],
-[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *)[style*="background: rgba(255, 255, 255, 0.05)"] {
+[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *):not(.admin-sidebar):not(.admin-sidebar *):not(.user-sidebar-overlay):not(.user-sidebar-overlay *)[style*="background: rgba(255,255,255,0.05)"],
+[data-theme="light"] *:not(.cobuy-dark-banner):not(.cobuy-dark-banner *):not(.admin-sidebar):not(.admin-sidebar *):not(.user-sidebar-overlay):not(.user-sidebar-overlay *)[style*="background: rgba(255, 255, 255, 0.05)"] {
   background: var(--badge-bg) !important;
   color: var(--text-main) !important;
+}
+
+/* ── CoBuy Admin Centralized Theme Variables & Collapsible Overlay ─────── */
+:root,
+[data-admin-theme="light"] {
+  --admin-bg: #f8fafc;
+  --admin-header: #ffffff;
+  --admin-sidebar: #0f172a;
+  --admin-card: #ffffff;
+  --admin-card-border: #e2e8f0;
+  --admin-text-primary: #0f172a;
+  --admin-text-secondary: #475569;
+  --admin-text-muted: #64748b;
+  --admin-input: #f8fafc;
+  --admin-input-border: #cbd5e1;
+  --admin-hover: #f1f5f9;
+  --admin-active-accent: #2563eb;
+  --admin-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+[data-admin-theme="dark"] {
+  --admin-bg: #17191C;
+  --admin-header: #1F2428;
+  --admin-sidebar: #0B1F3A;
+  --admin-card: #20252A;
+  --admin-card-border: #343A40;
+  --admin-text-primary: #F5F7FA;
+  --admin-text-secondary: #B8C0C8;
+  --admin-text-muted: #8A939D;
+  --admin-input: #252A2F;
+  --admin-input-border: #3A424A;
+  --admin-hover: #2A3036;
+  --admin-active-accent: #2563eb;
+  --admin-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+}
+
+/* ── Admin Sidebar Dedicated Theme Protection ─────────────────────────── */
+.admin-sidebar {
+  background: var(--admin-sidebar) !important;
+  border-right: 1px solid var(--admin-card-border) !important;
+  color: #94a3b8 !important;
+  border-radius: 0 !important;
+  overflow: hidden;
+}
+
+/* Admin Collapsible Overlay Sidebar Animations */
+.admin-sidebar-overlay {
+  position: fixed;
+  top: 64px;
+  left: 0;
+  width: 260px;
+  height: calc(100vh - 64px);
+  z-index: 50;
+  border-radius: 0 !important;
+  transition: transform 260ms cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 8px 0 28px rgba(0, 0, 0, 0.35);
+}
+
+.admin-sidebar-closed {
+  transform: translateX(-100%) !important;
+  pointer-events: none;
+}
+
+.admin-sidebar-open {
+  transform: translateX(0) !important;
+  pointer-events: auto;
+}
+
+.admin-backdrop {
+  position: fixed;
+  top: 64px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 45;
+  transition: opacity 260ms ease;
+}
+
+/* Admin Card & Element Utility Classes */
+.admin-card {
+  background: var(--admin-card);
+  border: 1px solid var(--admin-card-border);
+  color: var(--admin-text-primary);
+  border-radius: 12px;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.admin-input {
+  background: var(--admin-input);
+  border: 1px solid var(--admin-input-border);
+  color: var(--admin-text-primary);
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.admin-input:focus {
+  border-color: #3b82f6;
+}
+
+/* ── Dynamic Dark Mode Token Adaptation for Admin Subviews ───────────── */
+[data-admin-theme="dark"] div[style*="background: #ffffff"],
+[data-admin-theme="dark"] div[style*="background: '#ffffff'"],
+[data-admin-theme="dark"] div[style*="background:#ffffff"],
+[data-admin-theme="dark"] div[style*="background: rgb(255, 255, 255)"] {
+  background: var(--admin-card) !important;
+  border-color: var(--admin-card-border) !important;
+  color: var(--admin-text-primary) !important;
+}
+
+[data-admin-theme="dark"] div[style*="background: #f8fafc"],
+[data-admin-theme="dark"] div[style*="background: '#f8fafc'"],
+[data-admin-theme="dark"] div[style*="background:#f8fafc"],
+[data-admin-theme="dark"] div[style*="background: rgb(248, 250, 252)"] {
+  background: var(--admin-bg) !important;
+  border-color: var(--admin-card-border) !important;
+}
+
+[data-admin-theme="dark"] div[style*="background: #f1f5f9"],
+[data-admin-theme="dark"] div[style*="background: '#f1f5f9'"],
+[data-admin-theme="dark"] div[style*="background: rgb(241, 245, 249)"] {
+  background: var(--admin-hover) !important;
+  border-color: var(--admin-card-border) !important;
+}
+
+[data-admin-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
+[data-admin-theme="dark"] select,
+[data-admin-theme="dark"] textarea {
+  background: var(--admin-input) !important;
+  border-color: var(--admin-input-border) !important;
+  color: var(--admin-text-primary) !important;
+}
+
+[data-admin-theme="dark"] table th {
+  background: var(--admin-hover) !important;
+  color: var(--admin-text-muted) !important;
+  border-color: var(--admin-card-border) !important;
+}
+
+[data-admin-theme="dark"] table tr,
+[data-admin-theme="dark"] table td {
+  border-color: var(--admin-card-border) !important;
+  color: var(--admin-text-primary);
+}
+
+[data-admin-theme="dark"] h1,
+[data-admin-theme="dark"] h2,
+[data-admin-theme="dark"] h3,
+[data-admin-theme="dark"] h4 {
+  color: var(--admin-text-primary) !important;
+}
+
+[data-admin-theme="dark"] *[style*="color: #0f172a"],
+[data-admin-theme="dark"] *[style*="color: rgb(15, 23, 42)"] {
+  color: var(--admin-text-primary) !important;
+}
+
+[data-admin-theme="dark"] *[style*="color: #334155"],
+[data-admin-theme="dark"] *[style*="color: rgb(51, 65, 85)"] {
+  color: var(--admin-text-secondary) !important;
+}
+
+[data-admin-theme="dark"] *[style*="color: #64748b"],
+[data-admin-theme="dark"] *[style*="color: rgb(100, 116, 139)"] {
+  color: var(--admin-text-muted) !important;
+}
+
+[data-admin-theme="dark"] *[style*="border: 1px solid #e2e8f0"],
+[data-admin-theme="dark"] *[style*="border: 1px solid #cbd5e1"],
+[data-admin-theme="dark"] *[style*="border: 1px solid #f1f5f9"] {
+  border-color: var(--admin-card-border) !important;
 }
 
 tbody tr {
@@ -1689,4 +1862,399 @@ input[type=number] {
   max-height: 70vh;
   overflow-y: auto;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   User Dashboard CoBuy Dark Theme Overrides
+   ══════════════════════════════════════════════════════════════════════════ */
+
+[data-theme="dark"] .cobuy-dash-title {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .cobuy-dash-subtitle {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .cobuy-active-dataset-card {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25) !important;
+}
+
+[data-theme="dark"] .cobuy-active-dataset-name {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .cobuy-active-dataset-meta {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .cobuy-active-dataset-icon {
+  background: rgba(99, 102, 241, 0.2) !important;
+  color: #a5b4fc !important;
+}
+
+[data-theme="dark"] .cobuy-active-pill {
+  background: rgba(16, 185, 129, 0.15) !important;
+  border-color: rgba(16, 185, 129, 0.35) !important;
+  color: #34d399 !important;
+}
+
+[data-theme="dark"] .cobuy-change-dataset-btn {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+
+[data-theme="dark"] .cobuy-change-dataset-btn:hover {
+  background: #1e293b !important;
+  border-color: #818cf8 !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .cobuy-export-btn {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+
+[data-theme="dark"] .cobuy-export-btn:hover {
+  background: #334155 !important;
+  border-color: #818cf8 !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .cobuy-kpi-card {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25) !important;
+}
+
+[data-theme="dark"] .cobuy-kpi-card:hover {
+  border-color: #475569 !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35) !important;
+}
+
+[data-theme="dark"] .cobuy-kpi-label {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .cobuy-kpi-value {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .cobuy-kpi-footer {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .cobuy-kpi-compare {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .cobuy-chart-card {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25) !important;
+}
+
+[data-theme="dark"] .cobuy-chart-title {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .cobuy-insights-card {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25) !important;
+}
+
+[data-theme="dark"] .cobuy-insights-title {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .cobuy-insight-item {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+}
+
+[data-theme="dark"] .cobuy-insight-item:hover {
+  background: #131b2e !important;
+  border-color: rgba(99, 102, 241, 0.4) !important;
+}
+
+[data-theme="dark"] .cobuy-insight-text {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .cobuy-insight-subtext {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .cobuy-health-card {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25) !important;
+}
+
+[data-theme="dark"] .cobuy-health-title {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .cobuy-health-subtitle {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .cobuy-health-indicator-card {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+}
+
+[data-theme="dark"] .cobuy-health-ind-num {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .cobuy-health-ind-label {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .cobuy-modal-box {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.7) !important;
+}
+
+[data-theme="dark"] .cobuy-modal-title {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .cobuy-modal-header {
+  border-color: #334155 !important;
+}
+
+[data-theme="dark"] .cobuy-modal-close-btn:hover {
+  background: #334155 !important;
+  color: #f8fafc !important;
+}
+
+/* User sidebar scrollbar hidden & sharp corners — EXACT MATCH TO ADMIN SIDEBAR */
+.user-sidebar-overlay {
+  border-radius: 0 !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+  background: #0f172a !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #94a3b8 !important;
+}
+
+.user-sidebar-overlay::-webkit-scrollbar {
+  display: none !important;
+}
+
+[data-theme="dark"] .user-sidebar-overlay {
+  background: #0B1F3A !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+/* User sidebar navigation links matching admin aesthetic */
+.user-sidebar-overlay .nav-link {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.75rem !important;
+  padding: 0.55rem 0.85rem !important;
+  border-radius: 8px !important;
+  margin-bottom: 3px !important;
+  text-decoration: none !important;
+  font-size: 0.86rem !important;
+  font-weight: 500 !important;
+  color: #94a3b8 !important;
+  background: transparent !important;
+  box-sizing: border-box !important;
+  transition: all 0.15s ease !important;
+}
+
+.user-sidebar-overlay .nav-link svg {
+  color: #94a3b8 !important;
+  flex-shrink: 0 !important;
+  transition: color 0.15s ease !important;
+}
+
+.user-sidebar-overlay .nav-link:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+}
+
+.user-sidebar-overlay .nav-link:hover svg {
+  color: #ffffff !important;
+}
+
+.user-sidebar-overlay .nav-link.active {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35) !important;
+  font-weight: 600 !important;
+}
+
+.user-sidebar-overlay .nav-link.active svg {
+  color: #ffffff !important;
+}
+
+.user-sidebar-overlay .nav-link.logout-nav-link:hover {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: #ef4444 !important;
+}
+
+.user-sidebar-overlay .nav-link.logout-nav-link:hover svg {
+  color: #ef4444 !important;
+}
+
+/* User sidebar guide card styling (dark style matching admin aesthetic) */
+.user-sidebar-overlay .cobuy-sidebar-guide-card {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 12px !important;
+  padding: 0.95rem !important;
+}
+
+.user-sidebar-overlay .cobuy-sidebar-guide-icon {
+  color: #60a5fa !important;
+}
+
+.user-sidebar-overlay .cobuy-sidebar-guide-title {
+  color: #ffffff !important;
+  font-size: 0.82rem !important;
+  font-weight: 700 !important;
+}
+
+.user-sidebar-overlay .cobuy-sidebar-guide-desc {
+  color: #94a3b8 !important;
+  font-size: 0.72rem !important;
+  line-height: 1.4 !important;
+}
+
+.user-sidebar-overlay .cobuy-sidebar-guide-link {
+  color: #60a5fa !important;
+  font-size: 0.75rem !important;
+  font-weight: 700 !important;
+}
+
+.user-sidebar-overlay .cobuy-sidebar-guide-link:hover {
+  color: #93c5fd !important;
+}
+
+.user-sidebar-overlay .sidebar-footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+  padding: 0.85rem !important;
+}
+
+.user-top-header {
+  background: rgba(255, 255, 255, 0.95);
+  border-bottom: 1px solid #e2e8f0;
+  color: #0f172a;
+}
+
+[data-theme="dark"] .user-top-header {
+  background: rgba(15, 23, 42, 0.95) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #f8fafc !important;
+}
+
+/* ── CoBuy Settings Design System Tokens & Classes ──────────────────────── */
+[data-accent="purple"] {
+  --primary-color: #8b5cf6 !important;
+  --primary-hover: #a78bfa !important;
+  --c-accent: #8b5cf6 !important;
+}
+[data-accent="green"] {
+  --primary-color: #10b981 !important;
+  --primary-hover: #34d399 !important;
+  --c-accent: #10b981 !important;
+}
+[data-accent="blue"] {
+  --primary-color: #3b82f6 !important;
+  --primary-hover: #60a5fa !important;
+  --c-accent: #3b82f6 !important;
+}
+
+[data-compact="true"] {
+  --compact-padding-multiplier: 0.75;
+}
+[data-compact="true"] .card {
+  padding: 1.15rem !important;
+  gap: 0.85rem !important;
+}
+[data-compact="true"] .settings-card {
+  padding: 1.25rem !important;
+}
+[data-compact="true"] .setting-row {
+  padding: 0.75rem 0 !important;
+}
+
+[data-font-size="small"] {
+  font-size: 13.5px;
+}
+[data-font-size="normal"] {
+  font-size: 15px;
+}
+[data-font-size="large"] {
+  font-size: 16.5px;
+}
+
+/* Settings navigation items */
+.settings-nav-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: left;
+}
+.settings-nav-btn:hover {
+  background: var(--inner-box-bg);
+  color: var(--text-main);
+}
+.settings-nav-btn.active {
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--primary-color);
+  font-weight: 600;
+  border-color: rgba(59, 130, 246, 0.25);
+}
+[data-accent="purple"] .settings-nav-btn.active {
+  background: rgba(139, 92, 246, 0.12);
+  border-color: rgba(139, 92, 246, 0.25);
+  color: #8b5cf6;
+}
+[data-accent="green"] .settings-nav-btn.active {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.25);
+  color: #10b981;
+}
+
+/* Settings Card Container */
+.settings-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 1.75rem;
+  box-shadow: var(--card-shadow);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.setting-row:last-child {
+  border-bottom: none;
+}
+
 

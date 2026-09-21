@@ -61,15 +61,16 @@ const Dataset = () => {
   };
 
   const handleSelectFile = async (ds) => {
-    localStorage.setItem('activeDatasetId', ds.id);
+    localStorage.setItem('activeDatasetId', String(ds.id));
     localStorage.setItem('activeDatasetName', ds.name);
+    sessionStorage.setItem('analytics_file_name', ds.name);
+    sessionStorage.removeItem('analytics_results');
     try {
       await axios.post(`${API_BASE}/history/${ds.id}/activate`);
-      navigate(`/analytics?dataset_id=${ds.id}`);
     } catch (err) {
       console.error("Error activating dataset:", err);
-      navigate(`/analytics?dataset_id=${ds.id}`);
     }
+    navigate(`/analytics?dataset_id=${ds.id}`);
   };
 
   const handleExportResult = async (uploadId, filename) => {
