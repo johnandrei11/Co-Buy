@@ -780,8 +780,8 @@ const Login = ({ onLogin }) => {
                         <Store size={16} style={{ color: accountType === 'admin' ? 'var(--primary-color)' : 'var(--text-dim)' }} />
                       </div>
                       <div>
-                        <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.15rem' }}>Shop Administrator</div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>Owns a store, can invite team members</div>
+                        <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.15rem' }}>Shop Owner</div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>Owns a store, can invite staff members</div>
                       </div>
                     </div>
                     <div
@@ -798,8 +798,8 @@ const Login = ({ onLogin }) => {
                         <Users size={16} style={{ color: accountType === 'member' ? '#10b981' : 'var(--text-dim)' }} />
                       </div>
                       <div>
-                        <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.15rem' }}>Team Member</div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>Joins via an invitation link from an admin</div>
+                        <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.15rem' }}>Staff Member</div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>Joins via an invitation link from a shop owner</div>
                       </div>
                     </div>
                   </div>
@@ -846,7 +846,7 @@ const Login = ({ onLogin }) => {
                     borderRadius: '8px', padding: '0.75rem 1rem', fontSize: '0.82rem',
                     color: '#10b981', lineHeight: 1.5
                   }}>
-                    💬 After registering, your admin will send you an invitation link to activate your account.
+                    💬 After registering, your shop owner will send you an invitation link to activate your account.
                   </div>
                 </motion.div>
               )}

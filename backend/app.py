@@ -18,9 +18,10 @@ import datetime
 from datetime import datetime, timedelta, timezone
 import re
 from mlxtend.frequent_patterns import apriori, fpgrowth, association_rules
-from mlxtend.preprocessing import TransactionEncoder
+from transaction_encoder import TransactionEncoder
 
 import db
+from recommendation_service import RecommendationEngine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('adaptive_miner')
@@ -265,9 +266,10 @@ data_store = {
 CACHE_STATS = {}
 CACHE_TRENDS = {}
 CACHE_MINE = {}
+CACHE_RECOMMENDATIONS_V2 = {}
 
 def invalidate_dataset_cache(dataset_id=None):
-    global CACHE_STATS, CACHE_TRENDS, CACHE_MINE
+    global CACHE_STATS, CACHE_TRENDS, CACHE_MINE, CACHE_RECOMMENDATIONS_V2
     if dataset_id:
         ds_key = str(dataset_id)
         for k in list(CACHE_STATS.keys()):
@@ -279,10 +281,14 @@ def invalidate_dataset_cache(dataset_id=None):
         for k in list(CACHE_MINE.keys()):
             if str(k[0]) == ds_key:
                 CACHE_MINE.pop(k, None)
+        for k in list(CACHE_RECOMMENDATIONS_V2.keys()):
+            if str(k[0]) == ds_key:
+                CACHE_RECOMMENDATIONS_V2.pop(k, None)
     else:
         CACHE_STATS.clear()
         CACHE_TRENDS.clear()
         CACHE_MINE.clear()
+        CACHE_RECOMMENDATIONS_V2.clear()
 
 NOISE_KEYWORDS = {
     'postage', 'post', 'shipping', 'freight', 'delivery', 'delivery fee',
@@ -1407,6 +1413,97 @@ def mine_rules():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/v2/recommendations', methods=['GET', 'POST'])
+def get_recommendations_v2():
+    user_info, err = require_authenticated_user()
+    if err:
+        return err[0], err[1]
+    user_email = user_info['email']
+
+    # Support both GET query parameters and POST JSON body
+    if request.method == 'POST':
+        body = request.json or {}
+        dataset_id = body.get('dataset_id') or request.args.get('dataset_id')
+        category = body.get('category') or request.args.get('category', 'ALL')
+        date_range = body.get('date_range') or request.args.get('date_range', 'all')
+        search = body.get('search') or request.args.get('search', '')
+        sort_by = (body.get('sort_by') or request.args.get('sort_by') or 'volume').lower()
+        page = int(body.get('page') or request.args.get('page', 1))
+        page_size = int(body.get('page_size') or request.args.get('page_size', 10))
+    else:
+        dataset_id = request.args.get('dataset_id')
+        category = request.args.get('category', 'ALL')
+        date_range = request.args.get('date_range', 'all')
+        search = request.args.get('search', '')
+        sort_by = (request.args.get('sort_by') or 'volume').lower()
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 10))
+
+    if not dataset_id:
+        user_datasets = db.get_user_datasets(user_email=user_email)
+        if user_datasets:
+            dataset_id = user_datasets[0]['id']
+        else:
+            return jsonify({
+                'dataset_id': None,
+                'is_insufficient_data': True,
+                'message': 'No dataset selected or active in recommendations.',
+                'total_transactions': 0,
+                'analysis_period': {'start': 'N/A', 'end': 'N/A'},
+                'category_counts': {'ALL': 0, 'GROW': 0, 'SELL_MORE': 0, 'WATCH': 0, 'OPTIMIZE': 0, 'REVIEW': 0},
+                'recommendations': [],
+                'pagination': {'page': 1, 'page_size': page_size, 'total_items': 0, 'total_pages': 1},
+                'empty_reasons': {
+                    'ALL': 'Please upload or select a dataset to view business recommendations.'
+                }
+            })
+
+    dataset_info, auth_err = authorize_dataset_access(dataset_id, user_info)
+    if auth_err:
+        return auth_err[0], auth_err[1]
+
+    force_refresh = request.args.get('refresh') == 'true' or request.args.get('nocache') == '1' or (request.is_json and request.json and (request.json.get('refresh') is True or request.json.get('nocache') is True))
+    cache_key = (str(dataset_id), str(user_email), str(category).upper(), str(date_range), str(search).strip().lower())
+    cached = CACHE_RECOMMENDATIONS_V2.get(cache_key)
+    if not force_refresh and cached and (time.time() - cached['time'] < 300):
+        full_res = cached['data']
+    else:
+        try:
+            engine = RecommendationEngine(user_email=user_email, dataset_id=int(dataset_id))
+            full_res = engine.generate_recommendations(category_filter=category, date_range=date_range, search=search)
+            CACHE_RECOMMENDATIONS_V2[cache_key] = {'time': time.time(), 'data': full_res}
+        except Exception as e:
+            logger.exception(f"Error computing v2 recommendations for dataset {dataset_id}: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    # Sort results if requested
+    all_recs = list(full_res.get('recommendations', []))
+    if sort_by == 'volume':
+        all_recs.sort(key=lambda r: r.get('details', {}).get('supportingData', {}).get('transactionCount', 0), reverse=True)
+    elif sort_by == 'lift':
+        all_recs.sort(key=lambda r: r.get('details', {}).get('supportingData', {}).get('liftRatio', 0), reverse=True)
+    elif sort_by == 'confidence':
+        all_recs.sort(key=lambda r: r.get('details', {}).get('supportingData', {}).get('confidencePct', 0), reverse=True)
+
+    # Paginate results
+    total_items = len(all_recs)
+    total_pages = max(1, math.ceil(total_items / page_size)) if total_items > 0 else 1
+    safe_page = min(max(1, page), total_pages)
+    start_idx = (safe_page - 1) * page_size
+    end_idx = min(start_idx + page_size, total_items)
+    paginated_recs = all_recs[start_idx:end_idx]
+
+    response_payload = dict(full_res)
+    response_payload['recommendations'] = paginated_recs
+    response_payload['pagination'] = {
+        'page': safe_page,
+        'page_size': page_size,
+        'total_items': total_items,
+        'total_pages': total_pages
+    }
+
+    return jsonify(response_payload)
+
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
@@ -1959,6 +2056,41 @@ def export_recommendation_results(upload_id=None):
         headers={
             "Content-Type": "text/csv; charset=utf-8",
             "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
+
+@app.route('/api/v2/recommendations/download-pdf', methods=['POST'])
+def download_recommendations_pdf():
+    """
+    HTTP Content-Disposition download handler for PDF reports.
+    Ensures browsers (especially Chrome/Edge on Windows) save the file with the
+    exact declared filename and .pdf extension rather than dropping it to a raw UUID.
+    """
+    pdf_base64 = request.form.get('pdf_base64') or (request.json and request.json.get('pdf_base64'))
+    filename = request.form.get('filename') or (request.json and request.json.get('filename')) or 'CoBuy_Business_Recommendations.pdf'
+
+    # Sanitize filename
+    clean_name = os.path.basename(filename).strip()
+    if not clean_name.lower().endswith('.pdf'):
+        clean_name += '.pdf'
+
+    if not pdf_base64:
+        return jsonify({'error': 'No PDF data provided'}), 400
+
+    if ',' in pdf_base64:
+        pdf_base64 = pdf_base64.split(',', 1)[1]
+
+    try:
+        pdf_bytes = base64.b64decode(pdf_base64)
+    except Exception as e:
+        return jsonify({'error': f'Invalid base64 encoding: {e}'}), 400
+
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={
+            "Content-Type": "application/pdf",
+            "Content-Disposition": f'attachment; filename="{clean_name}"'
         }
     )
 

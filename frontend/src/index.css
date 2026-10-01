@@ -2,39 +2,39 @@
 
 :root,
 [data-theme="dark"] {
-  /* Complementary Living Dark Theme (Sapphire/Emerald Accents) */
+  /* CoBuy Retail Intelligence Dark Theme (Emerald Growth / Sapphire Data) */
   --c-dark: #0b1120;
   --c-light: 248, 250, 252;
-  --c-accent: #3b82f6;
-  --c-secondary-accent: #10b981;
+  --c-accent: #10b981;
+  --c-secondary-accent: #38bdf8;
 
   --bg-color: var(--c-dark);
-  --card-bg: rgba(30, 41, 59, 0.65);
-  --sidebar-bg: rgba(15, 23, 42, 0.75);
-  --sidebar-border: rgba(255, 255, 255, 0.08);
-  --border-color: rgba(255, 255, 255, 0.08);
+  --card-bg: rgba(19, 34, 56, 0.75);
+  --sidebar-bg: rgba(11, 17, 32, 0.85);
+  --sidebar-border: #1f2f4a;
+  --border-color: #253856;
 
-  --primary-color: #3b82f6;
-  --primary-hover: #60a5fa;
-  --accent-color: #10b981;
+  --primary-color: #10b981;
+  --primary-hover: #059669;
+  --accent-color: #38bdf8;
 
   --text-main: #f8fafc;
-  --text-muted: #94a3b8;
+  --text-muted: #8d9eb5;
   --text-dim: #64748b;
 
-  --sidebar-text: #94a3b8;
+  --sidebar-text: #8d9eb5;
   --sidebar-active: #ffffff;
-  --sidebar-active-bg: rgba(59, 130, 246, 0.15);
+  --sidebar-active-bg: rgba(16, 185, 129, 0.15);
 
-  --table-bg: rgba(0, 0, 0, 0.2);
-  --inner-box-bg: rgba(255, 255, 255, 0.03);
+  --table-bg: rgba(15, 26, 44, 0.6);
+  --inner-box-bg: rgba(15, 26, 44, 0.8);
   --badge-bg: rgba(255, 255, 255, 0.05);
-  --table-header-bg: #13151f;
+  --table-header-bg: #0f1a2c;
 
-  --card-shadow: none;
-  --card-hover-shadow: none;
-  --bg-gradient: radial-gradient(circle at 15% 10%, rgba(59, 130, 246, 0.08) 0%, transparent 45%),
-                 radial-gradient(circle at 85% 85%, rgba(16, 185, 129, 0.08) 0%, transparent 45%);
+  --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  --card-hover-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  --bg-gradient: radial-gradient(circle at 15% 10%, rgba(16, 185, 129, 0.08) 0%, transparent 45%),
+                 radial-gradient(circle at 85% 85%, rgba(56, 189, 248, 0.06) 0%, transparent 45%);
 
   --radius: 14px;
   --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
@@ -46,11 +46,11 @@
 }
 
 [data-theme="light"] {
-  /* AI Modern Light Theme (Royal Indigo / Violet Accents) */
+  /* CoBuy Retail Intelligence Light Theme (Emerald Growth / Sapphire Data) */
   --c-dark: #f8fafc;
   --c-light: 15, 23, 42;
-  --c-accent: #4f46e5;
-  --c-secondary-accent: #7c3aed;
+  --c-accent: #10b981;
+  --c-secondary-accent: #2563eb;
 
   --bg-color: #f8fafc;
   --card-bg: #ffffff;
@@ -58,27 +58,27 @@
   --sidebar-border: #e2e8f0;
   --border-color: #e2e8f0;
 
-  --primary-color: #4f46e5;
-  --primary-hover: #4338ca;
-  --accent-color: #7c3aed;
+  --primary-color: #10b981;
+  --primary-hover: #059669;
+  --accent-color: #2563eb;
 
   --text-main: #0f172a;
-  --text-muted: #64748b;
-  --text-dim: #94a3b8;
+  --text-muted: #475569;
+  --text-dim: #64748b;
 
-  --sidebar-text: #64748b;
-  --sidebar-active: #4f46e5;
-  --sidebar-active-bg: rgba(79, 70, 229, 0.08);
+  --sidebar-text: #475569;
+  --sidebar-active: #10b981;
+  --sidebar-active-bg: rgba(16, 185, 129, 0.08);
 
   --table-bg: #ffffff;
   --inner-box-bg: #f8fafc;
   --badge-bg: #f1f5f9;
   --table-header-bg: #f1f5f9;
 
-  --card-shadow: none;
-  --card-hover-shadow: none;
-  --bg-gradient: radial-gradient(circle at 15% 10%, rgba(79, 70, 229, 0.06) 0%, transparent 45%),
-                 radial-gradient(circle at 85% 85%, rgba(124, 58, 237, 0.06) 0%, transparent 45%);
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.02);
+  --card-hover-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
+  --bg-gradient: radial-gradient(circle at 15% 10%, rgba(16, 185, 129, 0.05) 0%, transparent 45%),
+                 radial-gradient(circle at 85% 85%, rgba(37, 99, 235, 0.04) 0%, transparent 45%);
 }
 
 /* Auto-adapt inline white/#fff text color when in light mode (excluding buttons, dark banners, admin sidebar, and user sidebar) */
@@ -1083,14 +1083,14 @@ input[type=number] {
 
 .cobuy-user-header-pill:hover {
   border-color: var(--primary-color);
-  background: rgba(79, 70, 229, 0.05);
+  background: rgba(16, 185, 129, 0.08);
 }
 
 .cobuy-user-avatar {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   color: #ffffff;
   font-weight: 700;
   font-size: 0.78rem;
@@ -1154,7 +1154,7 @@ input[type=number] {
 }
 
 .cobuy-sidebar-guide-link:hover {
-  color: #4f46e5;
+  color: var(--primary-color);
   text-decoration: underline;
 }
 
@@ -1257,8 +1257,8 @@ input[type=number] {
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: #eef2ff;
-  color: #4f46e5;
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1492,10 +1492,10 @@ input[type=number] {
 }
 
 .cobuy-chart-date-pill.active-filter {
-  background: rgba(99, 102, 241, 0.08);
-  border-color: #818cf8;
-  color: #4f46e5;
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.12);
+  background: rgba(16, 185, 129, 0.08);
+  border-color: #10b981;
+  color: #059669;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.12);
 }
 
 .cobuy-date-dropdown {
@@ -1530,9 +1530,9 @@ input[type=number] {
 }
 
 [data-theme="dark"] .cobuy-chart-date-pill.active-filter {
-  background: rgba(99, 102, 241, 0.2);
-  border-color: #818cf8;
-  color: #a5b4fc;
+  background: rgba(16, 185, 129, 0.2);
+  border-color: #34d399;
+  color: #34d399;
 }
 
 @keyframes cobuyDropdownIn {
@@ -1547,11 +1547,12 @@ input[type=number] {
 }
 
 .cobuy-chart-tooltip {
-  background: #4f46e5;
+  background: #132238;
   color: #ffffff;
+  border: 1px solid #253856;
   border-radius: 8px;
   padding: 0.5rem 0.85rem;
-  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
   font-family: var(--font-body);
   font-size: 0.78rem;
   pointer-events: none;
@@ -1712,7 +1713,7 @@ input[type=number] {
 }
 
 .cobuy-health-view-btn:hover {
-  color: #4f46e5;
+  color: var(--primary-color);
   text-decoration: underline;
 }
 

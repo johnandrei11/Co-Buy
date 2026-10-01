@@ -328,7 +328,7 @@
 }
 
 .cobuy-list-table tr.selected-row {
-  background: rgba(79, 70, 229, 0.12) !important;
+  background: rgba(16, 185, 129, 0.12) !important;
 }
 
 .cobuy-list-table tr.selected-row td {
@@ -337,20 +337,20 @@
 }
 
 [data-theme="light"] .cobuy-list-table tr.selected-row {
-  background: #eef2ff !important;
+  background: #ecfdf5 !important;
 }
 
 [data-theme="light"] .cobuy-list-table tr.selected-row td {
-  color: #4338ca !important;
+  color: #065f46 !important;
 }
 
 .cobuy-list-table tr.top-accent-row {
-  border-left: 4px solid #4f46e5;
-  background: rgba(79, 70, 229, 0.06);
+  border-left: 4px solid #10b981;
+  background: rgba(16, 185, 129, 0.08);
 }
 
 [data-theme="light"] .cobuy-list-table tr.top-accent-row {
-  background: #f8faff;
+  background: #f0fdf4;
 }
 
 .cobuy-list-table td {
@@ -376,6 +376,31 @@
   color: var(--primary-color);
   font-family: var(--font-mono, monospace);
   font-size: 0.82rem;
+}
+
+[data-theme="light"] .cobuy-list-table td.col-metric {
+  color: #047857 !important;
+  font-weight: 800 !important;
+}
+
+/* Category indicator pill inside table cells */
+.cobuy-item-category-pill {
+  font-size: 0.68rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 4px;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.3;
+}
+
+[data-theme="dark"] .cobuy-item-category-pill {
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 /* -- Full-Width Recommendations Section ---------------------------- */
@@ -1521,9 +1546,9 @@
   width: 46px;
   height: 46px;
   border-radius: 12px;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.25) 0%, rgba(79, 70, 229, 0.12) 100%) !important;
-  border: 1px solid rgba(99, 102, 241, 0.35);
-  color: #4f46e5;
+  background: rgba(16, 185, 129, 0.12) !important;
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  color: #047857;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1531,13 +1556,15 @@
 }
 
 [data-theme="dark"] .cobuy-results-hero-icon {
-  color: #a5b4fc;
+  background: rgba(16, 185, 129, 0.2) !important;
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #34d399;
 }
 
 .cobuy-results-hero-title {
   font-size: 1.38rem;
   font-weight: 800;
-  color: #10224b !important;
+  color: var(--text-main) !important;
   margin: 0;
   letter-spacing: -0.02em;
 }
@@ -1548,7 +1575,7 @@
 
 .cobuy-results-hero-subtitle {
   font-size: 0.85rem;
-  color: #4f6590 !important;
+  color: var(--text-muted) !important;
   margin: 0.25rem 0 0 0;
   line-height: 1.45;
 }
@@ -1568,23 +1595,29 @@
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  background: var(--inner-box-bg);
-  border: 1px solid var(--border-color);
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
   padding: 0.45rem 0.85rem;
   border-radius: 8px;
   font-size: 0.78rem;
   font-weight: 600;
-  color: #4f6590;
+  color: #1e293b;
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 [data-theme="dark"] .cobuy-dataset-pill {
-  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #cbd5e1;
 }
 
 .cobuy-new-analysis-btn {
-  background: rgba(79, 70, 229, 0.08);
-  border: 1px solid rgba(79, 70, 229, 0.25);
-  color: #4f46e5;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
   padding: 0.45rem 0.95rem;
   border-radius: 8px;
   font-size: 0.78rem;
@@ -1594,18 +1627,27 @@
   align-items: center;
   gap: 0.4rem;
   transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .cobuy-new-analysis-btn:hover {
-  background: rgba(79, 70, 229, 0.16);
-  border-color: #4f46e5;
+  background: #f8fafc;
+  border-color: #94a3b8;
+  color: #0f172a;
   transform: translateY(-1px);
 }
 
 [data-theme="dark"] .cobuy-new-analysis-btn {
-  background: rgba(99, 102, 241, 0.15);
-  border-color: rgba(99, 102, 241, 0.35);
-  color: #c7d2fe;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #e2e8f0;
+  box-shadow: none;
+}
+
+[data-theme="dark"] .cobuy-new-analysis-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #ffffff;
 }
 
 /* ── Product Neutral Ranking Pills ───────────────────────────────────────── */
@@ -1618,24 +1660,28 @@
   justify-content: center;
   font-size: 0.72rem;
   font-weight: 700;
-  background: rgba(79, 70, 229, 0.09);
-  color: #4f46e5;
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #cbd5e1;
   font-family: var(--font-mono, monospace);
 }
 
 .cobuy-rank-pill.is-first {
-  background: #4f46e5;
+  background: #10b981;
   color: #ffffff;
+  border-color: #059669;
 }
 
 [data-theme="dark"] .cobuy-rank-pill {
-  background: rgba(99, 102, 241, 0.2);
-  color: #c7d2fe;
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
 [data-theme="dark"] .cobuy-rank-pill.is-first {
-  background: #6366f1;
+  background: #10b981;
   color: #ffffff;
+  border-color: #10b981;
 }
 
 /* Product Name Badges / Pills in Recommendations Table */
@@ -2076,6 +2122,18 @@
   background: rgba(239, 68, 68, 0.05);
 }
 
+.cobuy-file-status-item.is-removed-notice {
+  border-color: rgba(148, 163, 184, 0.3);
+  background: rgba(148, 163, 184, 0.06);
+  color: var(--text-muted);
+  animation: fadeInNotice 0.25s ease;
+}
+
+@keyframes fadeInNotice {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .cobuy-status-filename {
   font-weight: 700;
   color: var(--text-main);
@@ -2288,121 +2346,6 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   RESULTS STATE — After Analysis (Reference Screen A)
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/* ── Results Hero Header ───────────────────────────────────────────────── */
-.cobuy-results-hero {
-  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 60%, #0f172a 100%);
-  border-radius: 18px;
-  padding: 1.6rem 2rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  position: relative;
-  overflow: hidden;
-  box-shadow: 0 12px 28px -5px rgba(15, 23, 42, 0.5);
-}
-
-.cobuy-results-hero::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.6), transparent);
-  pointer-events: none;
-}
-
-.cobuy-results-hero-left {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.cobuy-results-hero-icon {
-  width: 46px;
-  height: 46px;
-  border-radius: 13px;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.35), rgba(79, 70, 229, 0.2));
-  border: 1px solid rgba(99, 102, 241, 0.4);
-  box-shadow: 0 0 20px rgba(99, 102, 241, 0.25);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #a5b4fc;
-  flex-shrink: 0;
-}
-
-.cobuy-results-hero-title {
-  color: #ffffff;
-  font-size: 1.3rem;
-  font-weight: 800;
-  margin: 0;
-  letter-spacing: -0.02em;
-}
-
-.cobuy-results-hero-subtitle {
-  color: #94a3b8;
-  font-size: 0.85rem;
-  margin: 0.25rem 0 0;
-  line-height: 1.45;
-}
-
-.cobuy-results-hero-right {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-/* ── Dataset Indicator Pill ────────────────────────────────────────────── */
-.cobuy-dataset-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.45rem 1rem;
-  border-radius: 100px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  background: rgba(255, 255, 255, 0.06);
-  color: #e2e8f0;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  white-space: nowrap;
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* ── New Analysis / Utility Buttons ────────────────────────────────────── */
-.cobuy-new-analysis-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.5rem 1rem;
-  border-radius: 10px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  background: rgba(255, 255, 255, 0.08);
-  color: #e2e8f0;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  cursor: pointer;
-  transition: all 0.2s;
-  white-space: nowrap;
-}
-
-.cobuy-new-analysis-btn:hover {
-  background: rgba(99, 102, 241, 0.2);
-  border-color: rgba(99, 102, 241, 0.45);
-  color: #c7d2fe;
-  transform: translateY(-1px);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
    MODAL — SampleFileModal & Generic Overlay
    ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -2544,10 +2487,6 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 [data-theme="light"] .cobuy-setup-hero {
-  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 60%, #1e1b4b 100%);
-}
-
-[data-theme="light"] .cobuy-results-hero {
   background: linear-gradient(135deg, #1e1b4b 0%, #312e81 60%, #1e1b4b 100%);
 }
 
@@ -2806,8 +2745,9 @@
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  background: rgba(79, 70, 229, 0.1);
-  color: #4f46e5;
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+  border: 1px solid rgba(16, 185, 129, 0.25);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2815,8 +2755,9 @@
 }
 
 [data-theme="dark"] .cobuy-cat-filter-badge-icon {
-  background: rgba(99, 102, 241, 0.2);
-  color: #a5b4fc;
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #34d399;
 }
 
 .cobuy-cat-filter-title {
@@ -2842,35 +2783,43 @@
   font-size: 0.84rem;
   font-weight: 600;
   cursor: pointer;
-  border: 1px solid var(--border-color);
-  background: var(--inner-box-bg);
-  color: #4338ca;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
   transition: all 0.18s ease;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   user-select: none;
 }
 
 [data-theme="dark"] .cobuy-cat-trigger-btn {
-  color: #a5b4fc;
+  border-color: var(--border-color);
+  background: var(--inner-box-bg);
+  color: var(--text-main);
 }
 
 .cobuy-cat-trigger-btn:hover {
   background: var(--card-bg);
-  border-color: #4f46e5;
+  border-color: #059669;
   transform: translateY(-1px);
 }
 
 .cobuy-cat-trigger-btn.is-open {
-  border-color: #4f46e5;
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
   background: var(--card-bg);
 }
 
 .cobuy-cat-trigger-btn.is-filtered {
-  background: rgba(79, 70, 229, 0.08);
-  border-color: #4f46e5;
-  color: #4f46e5;
+  background: rgba(16, 185, 129, 0.1);
+  border-color: #10b981;
+  color: #047857;
   font-weight: 700;
+}
+
+[data-theme="dark"] .cobuy-cat-trigger-btn.is-filtered {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: #10b981;
+  color: #34d399;
 }
 
 .cobuy-cat-trigger-text {
@@ -2879,9 +2828,13 @@
 }
 
 .cobuy-cat-trigger-icon {
-  color: #6366f1;
+  color: #475569;
   transition: transform 0.2s ease;
   flex-shrink: 0;
+}
+
+[data-theme="dark"] .cobuy-cat-trigger-icon {
+  color: #94a3b8;
 }
 
 /* ── Popout Panel ─────────────────────────────────────────────── */
@@ -2892,10 +2845,10 @@
   min-width: 260px;
   max-width: 320px;
   width: max-content;
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 14px;
-  box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.14), 0 4px 12px -2px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.16), 0 4px 12px -2px rgba(0, 0, 0, 0.08);
   padding: 0.75rem;
   z-index: 150;
   display: flex;
@@ -2904,7 +2857,32 @@
 }
 
 [data-theme="dark"] .cobuy-cat-popout-panel {
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.5);
+  background: #0d172e; /* 100% solid, opaque dark - eliminates underlying text bleed-through */
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .cobuy-cat-popout-search-input {
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f1f5f9;
+}
+
+[data-theme="dark"] .cobuy-cat-popout-item:hover {
+  background: rgba(99, 102, 241, 0.16);
+}
+
+[data-theme="dark"] .cobuy-cat-popout-item.selected {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+[data-theme="dark"] .cobuy-cat-checkbox {
+  background: #1e293b;
+  border-color: #64748b;
+}
+
+[data-theme="dark"] .cobuy-cat-popout-divider {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 /* Popout Search Input */
@@ -3068,16 +3046,16 @@
   font-weight: 600;
   padding: 0.28rem 0.6rem;
   border-radius: 6px;
-  background: rgba(79, 70, 229, 0.07);
-  border: 1px solid rgba(79, 70, 229, 0.2);
-  color: #4f46e5;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
   cursor: default;
 }
 
 [data-theme="dark"] .cobuy-cat-scope-tag {
-  background: rgba(99, 102, 241, 0.15);
-  border-color: rgba(99, 102, 241, 0.3);
-  color: #c7d2fe;
+  background: rgba(37, 99, 235, 0.15);
+  border-color: rgba(56, 189, 248, 0.3);
+  color: #7dd3fc;
 }
 
 .cobuy-cat-reset-btn {
@@ -3161,6 +3139,1792 @@
   50% { left: 35%; width: 55%; }
   100% { left: 100%; width: 40%; }
 }
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   BUSINESS RECOMMENDATIONS ADVISORY ENGINE (UI/UX Overhaul Architecture)
+   ═════════════════════════════════════════════════════════════════════════════ */
+
+.cobuy-business-recommendations-root {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: 100%;
+  max-width: 1280px;
+  margin: 1.5rem auto 2.5rem auto;
+  padding: 0 1.5rem;
+  box-sizing: border-box;
+}
+
+/* ── Phase 1: Section Header ── */
+.cobuy-rec-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0 0.25rem 0;
+}
+
+.cobuy-rec-header-left {
+  display: flex;
+  flex-direction: column;
+}
+
+.cobuy-rec-header-title {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--text-main, #f8fafc);
+  margin: 0 0 0.35rem 0;
+  letter-spacing: -0.02em;
+}
+
+.cobuy-rec-header-subtitle {
+  font-size: 0.88rem;
+  color: var(--text-muted, #94a3b8);
+  margin: 0;
+  font-weight: 400;
+}
+
+.cobuy-rec-header-right {
+  display: flex;
+  align-items: center;
+}
+
+/* Date Range Selector */
+.cobuy-date-range-wrapper {
+  position: relative;
+}
+
+.cobuy-date-range-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.95rem;
+  background: var(--card-bg, #0c1529);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  border-radius: 10px;
+  color: var(--text-main, #cbd5e1);
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cobuy-date-range-trigger:hover {
+  border-color: rgba(96, 165, 250, 0.4);
+  background: #111d38;
+}
+
+.cobuy-date-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 170px;
+  background: var(--card-bg, #0c1529);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.55);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+}
+
+.cobuy-date-dropdown-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #94a3b8;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.cobuy-date-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.cobuy-date-dropdown-item.is-selected {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  font-weight: 600;
+}
+
+/* ── Phase 1: Category Navigation Tabs (5-Item Grid) ── */
+.cobuy-category-tabs-container {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.85rem;
+  width: 100%;
+}
+
+.cobuy-category-tab-card {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1.1rem;
+  background: var(--card-bg, #0c1529);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+}
+
+.cobuy-category-tab-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.18);
+  background: #101c38;
+}
+
+.cobuy-category-tab-card.is-active {
+  border: 1.8px solid #10b981;
+  background: rgba(16, 185, 129, 0.06);
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.22);
+}
+
+.cobuy-category-tab-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.cobuy-category-tab-card.is-active .cobuy-category-tab-icon-wrap {
+  background: rgba(16, 185, 129, 0.18);
+  color: #10b981;
+}
+
+.cobuy-category-tab-text-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.cobuy-category-tab-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-main, #f8fafc);
+  white-space: nowrap;
+}
+
+.cobuy-category-tab-subtitle {
+  font-size: 0.74rem;
+  color: var(--text-muted, #64748b);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cobuy-category-tab-card.is-active .cobuy-category-tab-subtitle {
+  color: #94a3b8;
+}
+
+/* ── Phase 2: Action Toolbar (Search Left, Sort & Export Right) ── */
+.cobuy-rec-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--card-bg, #0c1529);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  flex-wrap: wrap;
+}
+
+.cobuy-rec-search-box {
+  position: relative;
+  flex: 1;
+  max-width: 380px;
+  min-width: 220px;
+}
+
+.cobuy-rec-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #64748b;
+}
+
+.cobuy-rec-search-input {
+  width: 100%;
+  height: 38px;
+  padding: 0 2rem 0 2.3rem;
+  background: var(--inner-box-bg, #080e1d);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  border-radius: 9px;
+  font-size: 0.82rem;
+  color: var(--text-main, #f1f5f9);
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
+}
+
+.cobuy-rec-search-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.cobuy-rec-search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.cobuy-rec-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Sort Dropdown */
+.cobuy-sort-dropdown-wrapper {
+  position: relative;
+}
+
+.cobuy-sort-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.95rem;
+  background: var(--inner-box-bg, #080e1d);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  border-radius: 9px;
+  color: var(--text-main, #cbd5e1);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cobuy-sort-dropdown-trigger:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: #111d38;
+}
+
+.cobuy-sort-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 140px;
+  background: var(--card-bg, #0c1529);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.55);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+}
+
+.cobuy-sort-dropdown-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0.48rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #94a3b8;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.cobuy-sort-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.cobuy-sort-dropdown-item.is-selected {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  font-weight: 600;
+}
+
+/* Export Button */
+.cobuy-rec-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 1rem;
+  background: var(--inner-box-bg, #080e1d);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  border-radius: 9px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-main, #cbd5e1);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cobuy-rec-export-btn:hover:not(:disabled) {
+  background: #111d38;
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+
+.cobuy-rec-export-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ── Phase 3: Recommendation Card Architecture (3-Zone Grid) ── */
+.cobuy-rec-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+  width: 100%;
+}
+
+.cobuy-rec-3zone-card {
+  background: var(--card-bg, #0c1529);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  border-radius: 14px;
+  padding: 1.35rem 1.6rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cobuy-rec-3zone-card:hover {
+  border-color: rgba(16, 185, 129, 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.cobuy-rec-3zone-grid {
+  display: grid;
+  grid-template-columns: 2.8fr 6fr 2.2fr;
+  gap: 1.5rem;
+  align-items: center;
+}
+
+.cobuy-rec-zone {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Zone 1: Identity & Volume (~25% Width) */
+.cobuy-rec-zone--identity {
+  gap: 0.45rem;
+  border-right: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  padding-right: 1.5rem;
+}
+
+.cobuy-rec-zone1-top {
+  margin-bottom: 0.15rem;
+}
+
+.cobuy-rec-pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 20px;
+  border: 1px solid;
+  letter-spacing: 0.02em;
+}
+
+.cobuy-rec-pill-indicator {
+  font-size: 0.62rem;
+}
+
+.cobuy-rec-product-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text-main, #ffffff);
+  margin: 0.15rem 0;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.cobuy-rec-volume-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  font-size: 0.74rem;
+  color: #93c5fd;
+  width: fit-content;
+  margin-top: 0.1rem;
+}
+
+.cobuy-rec-volume-icon-box {
+  display: flex;
+  align-items: center;
+}
+
+.cobuy-rec-volume-badge strong {
+  color: #dbeafe;
+  font-weight: 700;
+}
+
+/* Zone 2: Action Takeaway & Strategy (~55% Width) */
+.cobuy-rec-zone--strategy {
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.cobuy-rec-headline {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-main, #f8fafc);
+  margin: 0;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.cobuy-rec-condensed-summary {
+  font-size: 0.82rem;
+  color: var(--text-muted, #94a3b8);
+  margin: 0;
+  line-height: 1.48;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cobuy-rec-strategy-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #fcd34d;
+  width: fit-content;
+  margin-top: 0.15rem;
+}
+
+.cobuy-rec-tag-icon {
+  color: #f59e0b;
+}
+
+/* Zone 3: Primary Action CTA (~20% Width) */
+.cobuy-rec-zone--cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.cobuy-rec-cta-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.75rem 1.4rem;
+  background: #10b981;
+  border: 1.5px solid #10b981;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #ffffff;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.3);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  width: 100%;
+  max-width: 165px;
+}
+
+.cobuy-rec-cta-btn:hover {
+  background: #059669 !important;
+  border-color: #059669 !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.45);
+  transform: translateY(-1px);
+}
+
+.cobuy-rec-cta-arrow {
+  transition: transform 0.15s ease;
+}
+
+.cobuy-rec-cta-btn:hover .cobuy-rec-cta-arrow {
+  transform: translateX(2px);
+}
+
+/* ── Phase 4: Dedicated Full-Width Footer & Pagination ── */
+.cobuy-rec-footer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.4rem;
+  background: var(--card-bg, #0c1529);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  margin-top: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.cobuy-rec-footer-count {
+  font-size: 0.82rem;
+  color: var(--text-muted, #94a3b8);
+  font-weight: 500;
+}
+
+.cobuy-rec-footer-count strong {
+  color: var(--text-main, #f1f5f9);
+  font-weight: 700;
+}
+
+/* Per Page Selector */
+.cobuy-rec-footer-pagesize {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cobuy-rec-pagesize-label {
+  font-size: 0.82rem;
+  color: var(--text-muted, #94a3b8);
+  font-weight: 500;
+}
+
+.cobuy-pagesize-dropdown-wrapper {
+  position: relative;
+}
+
+.cobuy-pagesize-dropdown-trigger {
+  background: var(--inner-box-bg, #080e1d);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border-radius: 7px;
+  color: var(--text-main, #cbd5e1);
+  padding: 3px 9px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cobuy-pagesize-dropdown-trigger:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.cobuy-pagesize-dropdown-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 70px;
+  background: var(--card-bg, #0c1529);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  padding: 3px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+}
+
+.cobuy-pagesize-dropdown-item {
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #94a3b8;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.cobuy-pagesize-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.cobuy-pagesize-dropdown-item.is-selected {
+  background: #10b981;
+  color: #042f2e;
+}
+
+/* Pagination Controls */
+.cobuy-rec-footer-pagination {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+
+.cobuy-pagination-arrow {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--inner-box-bg, #080e1d);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.cobuy-pagination-arrow:hover:not(:disabled) {
+  background: #131f38;
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.cobuy-pagination-arrow:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.cobuy-pagination-page-num {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--inner-box-bg, #080e1d);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.cobuy-pagination-page-num:hover:not(.is-active) {
+  background: #131f38;
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.cobuy-pagination-page-num.is-active {
+  background: #10b981;
+  border-color: #10b981;
+  color: #042f2e;
+  font-weight: 800;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
+  cursor: default;
+}
+
+/* ── Section 4: Responsive Breakpoint Specifications ── */
+@media (max-width: 1023px) and (min-width: 768px) {
+  .cobuy-category-tabs-container {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .cobuy-rec-3zone-grid {
+    grid-template-columns: 3fr 5.5fr 2.5fr;
+    gap: 1.1rem;
+  }
+}
+
+@media (max-width: 767px) {
+  .cobuy-category-tabs-container {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .cobuy-rec-3zone-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .cobuy-rec-zone--identity {
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-right: 0;
+    padding-bottom: 0.85rem;
+  }
+
+  .cobuy-rec-zone--cta {
+    justify-content: flex-start;
+  }
+
+  .cobuy-rec-cta-btn {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .cobuy-rec-footer-bar {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0.85rem;
+  }
+}
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   LIGHT THEME OVERRIDES — Business Recommendations & Advisory Engine
+   ═════════════════════════════════════════════════════════════════════════════ */
+
+[data-theme="light"] .cobuy-rec-header-title {
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .cobuy-rec-header-subtitle {
+  color: #64748b !important;
+}
+
+[data-theme="light"] .cobuy-date-range-trigger {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  color: #1e293b !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .cobuy-date-range-trigger:hover {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+}
+
+[data-theme="light"] .cobuy-date-dropdown-menu {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .cobuy-date-dropdown-item {
+  color: #475569 !important;
+}
+
+[data-theme="light"] .cobuy-date-dropdown-item:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .cobuy-date-dropdown-item.is-selected {
+  background: #eff6ff !important;
+  color: #2563eb !important;
+}
+
+/* Category Tabs (Light Theme) */
+[data-theme="light"] .cobuy-category-tab-card {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .cobuy-category-tab-card:hover {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+}
+
+[data-theme="light"] .cobuy-category-tab-card.is-active {
+  border: 2px solid #10b981 !important;
+  background: rgba(16, 185, 129, 0.08) !important;
+  box-shadow: 0 2px 12px rgba(16, 185, 129, 0.16) !important;
+}
+
+[data-theme="light"] .cobuy-category-tab-icon-wrap {
+  background: #f1f5f9 !important;
+  color: #64748b !important;
+}
+
+[data-theme="light"] .cobuy-category-tab-card.is-active .cobuy-category-tab-icon-wrap {
+  background: rgba(16, 185, 129, 0.18) !important;
+  color: #059669 !important;
+}
+
+[data-theme="light"] .cobuy-category-tab-name {
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .cobuy-category-tab-card.is-active .cobuy-category-tab-name {
+  color: #047857 !important;
+}
+
+[data-theme="light"] .cobuy-category-tab-subtitle {
+  color: #475569 !important;
+}
+
+[data-theme="light"] .cobuy-category-tab-card.is-active .cobuy-category-tab-subtitle {
+  color: #065f46 !important;
+}
+
+/* Toolbar (Light Theme) */
+[data-theme="light"] .cobuy-rec-toolbar {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .cobuy-rec-search-input {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .cobuy-rec-search-input:focus {
+  background: #ffffff !important;
+  border-color: #3b82f6 !important;
+}
+
+[data-theme="light"] .cobuy-rec-search-icon,
+[data-theme="light"] .cobuy-rec-search-clear {
+  color: #64748b !important;
+}
+
+[data-theme="light"] .cobuy-sort-dropdown-trigger {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #334155 !important;
+}
+
+[data-theme="light"] .cobuy-sort-dropdown-trigger:hover {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+}
+
+[data-theme="light"] .cobuy-sort-dropdown-menu {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .cobuy-sort-dropdown-item {
+  color: #475569 !important;
+}
+
+[data-theme="light"] .cobuy-sort-dropdown-item:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .cobuy-sort-dropdown-item.is-selected {
+  background: #eff6ff !important;
+  color: #2563eb !important;
+}
+
+[data-theme="light"] .cobuy-rec-export-btn {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #334155 !important;
+}
+
+[data-theme="light"] .cobuy-rec-export-btn:hover:not(:disabled) {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+/* Recommendation Cards (Light Theme) */
+[data-theme="light"] .cobuy-rec-3zone-card {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .cobuy-rec-3zone-card:hover {
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.07);
+}
+
+[data-theme="light"] .cobuy-rec-zone--identity {
+  border-right-color: #e2e8f0 !important;
+}
+
+[data-theme="light"] .cobuy-rec-product-title {
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .cobuy-rec-volume-badge {
+  background: #eff6ff !important;
+  border-color: #dbeafe !important;
+  color: #2563eb !important;
+}
+
+[data-theme="light"] .cobuy-rec-volume-badge strong {
+  color: #1d4ed8 !important;
+}
+
+[data-theme="light"] .cobuy-rec-headline {
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .cobuy-rec-condensed-summary {
+  color: #475569 !important;
+}
+
+[data-theme="light"] .cobuy-rec-strategy-tag {
+  background: #fffbeb !important;
+  border-color: #fef3c7 !important;
+  color: #b45309 !important;
+}
+
+[data-theme="light"] .cobuy-rec-strategy-tag .cobuy-rec-tag-icon {
+  color: #d97706 !important;
+}
+
+/* Category Pill Badges (Light Theme Contrast) */
+[data-theme="light"] .cobuy-rec-pill-badge--grow {
+  background: rgba(16, 185, 129, 0.12) !important;
+  border-color: rgba(16, 185, 129, 0.35) !important;
+  color: #047857 !important;
+}
+
+[data-theme="light"] .cobuy-rec-pill-badge--sell_more {
+  background: rgba(59, 130, 246, 0.12) !important;
+  border-color: rgba(59, 130, 246, 0.35) !important;
+  color: #1d4ed8 !important;
+}
+
+[data-theme="light"] .cobuy-rec-pill-badge--watch {
+  background: rgba(168, 85, 247, 0.12) !important;
+  border-color: rgba(168, 85, 247, 0.35) !important;
+  color: #7e22ce !important;
+}
+
+[data-theme="light"] .cobuy-rec-pill-badge--optimize {
+  background: rgba(245, 158, 11, 0.12) !important;
+  border-color: rgba(245, 158, 11, 0.35) !important;
+  color: #b45309 !important;
+}
+
+[data-theme="light"] .cobuy-rec-pill-badge--review {
+  background: rgba(239, 68, 68, 0.12) !important;
+  border-color: rgba(239, 68, 68, 0.35) !important;
+  color: #b91c1c !important;
+}
+
+/* Card CTA Buttons (Light Theme) */
+[data-theme="light"] .cobuy-rec-cta-btn {
+  background: #10b981 !important;
+  border-color: #10b981 !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.25) !important;
+}
+
+[data-theme="light"] .cobuy-rec-cta-btn:hover {
+  background: #059669 !important;
+  border-color: #059669 !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35) !important;
+  transform: translateY(-1px);
+}
+
+/* Footer Bar & Pagination (Light Theme) */
+[data-theme="light"] .cobuy-rec-footer-bar {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .cobuy-rec-footer-count {
+  color: #475569 !important;
+}
+
+[data-theme="light"] .cobuy-rec-footer-count strong {
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .cobuy-rec-pagesize-label {
+  color: #475569 !important;
+}
+
+[data-theme="light"] .cobuy-pagesize-dropdown-trigger {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #334155 !important;
+}
+
+[data-theme="light"] .cobuy-pagesize-dropdown-trigger:hover {
+  border-color: #cbd5e1 !important;
+}
+
+[data-theme="light"] .cobuy-pagesize-dropdown-menu {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .cobuy-pagesize-dropdown-item {
+  color: #475569 !important;
+}
+
+[data-theme="light"] .cobuy-pagesize-dropdown-item:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .cobuy-pagesize-dropdown-item.is-selected {
+  background: #10b981 !important;
+  color: #ffffff !important;
+}
+
+[data-theme="light"] .cobuy-pagination-arrow {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #64748b !important;
+}
+
+[data-theme="light"] .cobuy-pagination-arrow:hover:not(:disabled) {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .cobuy-pagination-page-num {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #64748b !important;
+}
+
+[data-theme="light"] .cobuy-pagination-page-num:hover:not(.is-active) {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .cobuy-pagination-page-num.is-active {
+  background: #10b981 !important;
+  border-color: #10b981 !important;
+  color: #ffffff !important;
+}
+
+/* Resilient States (Light Theme) */
+[data-theme="light"] .cobuy-rec-error-state,
+[data-theme="light"] .cobuy-rec-insufficient-state,
+[data-theme="light"] .cobuy-rec-category-empty-state {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+[data-theme="light"] .cobuy-rec-empty-icon-circle {
+  background: #eff6ff !important;
+  color: #3b82f6 !important;
+}
+
+[data-theme="light"] .cobuy-rec-error-title,
+[data-theme="light"] .cobuy-rec-insufficient-title,
+[data-theme="light"] .cobuy-rec-empty-title {
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .cobuy-rec-error-msg,
+[data-theme="light"] .cobuy-rec-insufficient-desc,
+[data-theme="light"] .cobuy-rec-empty-desc {
+  color: #64748b !important;
+}
+
+[data-theme="light"] .cobuy-skeleton-card {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+[data-theme="light"] .cobuy-skeleton-pill,
+[data-theme="light"] .cobuy-skeleton-line {
+  background: #e2e8f0 !important;
+}
+
+/* View Details Modal (Light Theme Guard - Preserve Dark Cinema Dialogue & Contrast) */
+[data-theme="light"] .cobuy-view-details-modal {
+  background: #132238 !important;
+  border-color: #253856 !important;
+  color: #e2e8f0 !important;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+}
+
+[data-theme="light"] .cobuy-vdm-title {
+  color: #ffffff !important;
+}
+
+[data-theme="light"] .cobuy-vdm-timestamp {
+  color: #8d9eb5 !important;
+}
+
+[data-theme="light"] .cobuy-vdm-close-btn {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border-color: #253856 !important;
+  color: #8d9eb5 !important;
+}
+
+[data-theme="light"] .cobuy-vdm-close-btn:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-color: #38bdf8 !important;
+  color: #ffffff !important;
+}
+
+[data-theme="light"] .cobuy-vdm-tab-bar {
+  border-bottom-color: #1f2f4a !important;
+}
+
+[data-theme="light"] .cobuy-vdm-tab-btn {
+  color: #8d9eb5 !important;
+}
+
+[data-theme="light"] .cobuy-vdm-tab-btn:hover {
+  color: #ffffff !important;
+}
+
+[data-theme="light"] .cobuy-vdm-tab-btn.is-active {
+  color: #ffffff !important;
+  border-bottom-color: #00d084 !important;
+}
+
+[data-theme="light"] .cobuy-vdm-section-title--cyan {
+  color: #38bdf8 !important;
+}
+
+[data-theme="light"] .cobuy-vdm-section-title--green {
+  color: #34d399 !important;
+}
+
+[data-theme="light"] .cobuy-vdm-inset-box {
+  background: #0f1a2c !important;
+  border-color: #1f2f4a !important;
+}
+
+[data-theme="light"] .cobuy-vdm-rationale-text {
+  color: #e2e8f0 !important;
+}
+
+[data-theme="light"] .cobuy-vdm-kpi-card {
+  background: #0f1a2c !important;
+  border-color: #1f2f4a !important;
+}
+
+[data-theme="light"] .cobuy-vdm-kpi-val--white {
+  color: #ffffff !important;
+}
+
+[data-theme="light"] .cobuy-vdm-kpi-val--green {
+  color: #34d399 !important;
+}
+
+[data-theme="light"] .cobuy-vdm-kpi-val--cyan {
+  color: #38bdf8 !important;
+}
+
+[data-theme="light"] .cobuy-vdm-kpi-label {
+  color: #8d9eb5 !important;
+}
+
+[data-theme="light"] .cobuy-vdm-action-card {
+  background: #0f1a2c !important;
+  border-color: #1f2f4a !important;
+}
+
+[data-theme="light"] .cobuy-vdm-action-headline {
+  color: #ffffff !important;
+}
+
+[data-theme="light"] .cobuy-vdm-action-desc {
+  color: #8d9eb5 !important;
+}
+
+[data-theme="light"] .cobuy-vdm-action-badge {
+  background: rgba(96, 165, 250, 0.12) !important;
+  color: #60a5fa !important;
+  border-color: rgba(96, 165, 250, 0.28) !important;
+}
+
+[data-theme="light"] .cobuy-vdm-stat-row {
+  border-bottom-color: #1f2f4a !important;
+}
+
+[data-theme="light"] .cobuy-vdm-stat-k {
+  color: #8d9eb5 !important;
+}
+
+[data-theme="light"] .cobuy-vdm-stat-v {
+  color: #ffffff !important;
+}
+
+[data-theme="light"] .cobuy-vdm-footer {
+  border-top-color: #1f2f4a !important;
+}
+
+[data-theme="light"] .cobuy-vdm-footer-brand {
+  color: #8d9eb5 !important;
+}
+
+[data-theme="light"] .cobuy-vdm-done-btn {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: #253856 !important;
+  color: #ffffff !important;
+}
+
+[data-theme="light"] .cobuy-vdm-done-btn:hover {
+  background: #00d084 !important;
+  border-color: #00d084 !important;
+  color: #060a14 !important;
+}
+
+/* ── 6. View Details Centered Modal Dialog (v2.0 Spec) ── */
+.cobuy-view-details-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 10, 20, 0.85);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  animation: cobuyModalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes cobuyModalFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.cobuy-view-details-modal {
+  position: relative;
+  background: #132238;
+  border: 1.5px solid #253856;
+  border-radius: 16px;
+  max-width: 740px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 1.75rem 2rem;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  animation: cobuyModalScaleIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+}
+
+@keyframes cobuyModalScaleIn {
+  from {
+    transform: scale(0.96) translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Custom Scrollbar for Modal */
+.cobuy-view-details-modal::-webkit-scrollbar {
+  width: 6px;
+}
+.cobuy-view-details-modal::-webkit-scrollbar-track {
+  background: rgba(15, 26, 44, 0.6);
+  border-radius: 8px;
+}
+.cobuy-view-details-modal::-webkit-scrollbar-thumb {
+  background: #253856;
+  border-radius: 8px;
+}
+.cobuy-view-details-modal::-webkit-scrollbar-thumb:hover {
+  background: #38bdf8;
+}
+
+/* ── Section 1: Modal Header ── */
+.cobuy-vdm-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.cobuy-vdm-header-left {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.cobuy-vdm-category-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border: 1px solid;
+  letter-spacing: 0.02em;
+  margin-bottom: 0.5rem;
+  line-height: 1;
+}
+
+.cobuy-vdm-title {
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 0.3rem 0;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.cobuy-vdm-timestamp {
+  font-size: 0.78rem;
+  color: #8d9eb5;
+  margin: 0;
+  font-weight: 500;
+}
+
+.cobuy-vdm-close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid #253856;
+  color: #8d9eb5;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.cobuy-vdm-close-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+/* ── Section 2: Tab Bar ── */
+.cobuy-vdm-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  border-bottom: 1px solid #1f2f4a;
+  margin-top: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.cobuy-vdm-tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.65rem 0.2rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #8d9eb5;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cobuy-vdm-tab-btn:hover {
+  color: #ffffff;
+}
+
+.cobuy-vdm-tab-btn.is-active {
+  color: #ffffff;
+  border-bottom-color: #00d084;
+}
+
+/* ── Modal Body & Sections ── */
+.cobuy-vdm-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.cobuy-vdm-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.cobuy-vdm-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 0.55rem;
+}
+
+.cobuy-vdm-section-title--cyan {
+  color: #38bdf8;
+}
+
+.cobuy-vdm-section-title--green {
+  color: #34d399;
+}
+
+.cobuy-vdm-sec-icon {
+  flex-shrink: 0;
+}
+
+/* Inset Box (Rationale / Why CoBuy Created This) */
+.cobuy-vdm-inset-box {
+  background: #0f1a2c;
+  border: 1px solid #1f2f4a;
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+}
+
+.cobuy-vdm-rationale-text {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: #e2e8f0;
+  margin: 0;
+}
+
+/* ── 3-Card KPI Grid ── */
+.cobuy-vdm-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.9rem;
+}
+
+.cobuy-vdm-kpi-card {
+  background: #0f1a2c;
+  border: 1px solid #1f2f4a;
+  border-radius: 10px;
+  padding: 1.05rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 94px;
+}
+
+.cobuy-vdm-kpi-val {
+  font-size: 1.7rem;
+  font-weight: 800;
+  line-height: 1.15;
+  margin-bottom: 0.35rem;
+  letter-spacing: -0.02em;
+}
+
+.cobuy-vdm-kpi-val--white {
+  color: #ffffff;
+}
+
+.cobuy-vdm-kpi-val--green {
+  color: #34d399;
+}
+
+.cobuy-vdm-kpi-val--cyan {
+  color: #38bdf8;
+}
+
+.cobuy-vdm-kpi-label {
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: #8d9eb5;
+  line-height: 1.35;
+}
+
+/* ── Action Considerations ── */
+.cobuy-vdm-actions-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.cobuy-vdm-action-card {
+  background: #0f1a2c;
+  border: 1px solid #1f2f4a;
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.cobuy-vdm-action-top {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.cobuy-vdm-action-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: rgba(96, 165, 250, 0.12);
+  color: #60a5fa;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cobuy-vdm-action-headline {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+}
+
+.cobuy-vdm-action-desc {
+  font-size: 0.85rem;
+  color: #8d9eb5;
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* Supporting Analytics Tab Rows */
+.cobuy-vdm-stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid #1f2f4a;
+}
+
+.cobuy-vdm-stat-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.cobuy-vdm-stat-row:first-child {
+  padding-top: 0;
+}
+
+.cobuy-vdm-stat-k {
+  font-size: 0.82rem;
+  color: #8d9eb5;
+}
+
+.cobuy-vdm-stat-v {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+/* ── Modal Footer ── */
+.cobuy-vdm-footer {
+  margin-top: 1.5rem;
+  padding-top: 1.15rem;
+  border-top: 1px solid #1f2f4a;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.cobuy-vdm-footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #8d9eb5;
+}
+
+.cobuy-vdm-zap-icon {
+  color: #fbbf24;
+}
+
+.cobuy-vdm-done-btn {
+  padding: 0.55rem 1.35rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid #253856;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cobuy-vdm-done-btn:hover {
+  background: #00d084;
+  border-color: #00d084;
+  color: #060a14;
+}
+
+/* ── Responsive Mobile Adjustments (<640px) ── */
+@media (max-width: 640px) {
+  .cobuy-view-details-overlay {
+    padding: 1rem;
+  }
+
+  .cobuy-view-details-modal {
+    padding: 1.25rem 1.15rem;
+    max-height: 92vh;
+  }
+
+  .cobuy-vdm-title {
+    font-size: 1.25rem;
+  }
+
+  .cobuy-vdm-kpi-grid {
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
+  }
+
+  .cobuy-vdm-kpi-card {
+    min-height: auto;
+    padding: 0.85rem 1rem;
+  }
+
+  .cobuy-vdm-action-top {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
+
+  .cobuy-vdm-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.85rem;
+  }
+
+  .cobuy-vdm-done-btn {
+    width: 100%;
+    text-align: center;
+  }
+}
+
+/* ── 7. Resilient Edge States ── */
+.cobuy-skeleton-cards-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.cobuy-skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.4rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 14px;
+}
+
+.cobuy-skeleton-pill,
+.cobuy-skeleton-line {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  animation: cobuyPulse 1.5s infinite ease-in-out;
+}
+
+.cobuy-skeleton-pill {
+  height: 22px;
+  border-radius: 20px;
+}
+
+@keyframes cobuyPulse {
+  0% { opacity: 0.4; }
+  50% { opacity: 0.85; }
+  100% { opacity: 0.4; }
+}
+
+.cobuy-rec-error-state,
+.cobuy-rec-insufficient-state,
+.cobuy-rec-category-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 3.5rem 1.5rem;
+  background: var(--card-bg, #0d172e);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  border-radius: 14px;
+  gap: 0.65rem;
+}
+
+.cobuy-rec-empty-icon-circle {
+  width: 58px;
+  height: 58px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #60a5fa;
+  margin-bottom: 0.35rem;
+}
+
+.cobuy-rec-error-title,
+.cobuy-rec-insufficient-title,
+.cobuy-rec-empty-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #f8fafc;
+  margin: 0;
+}
+
+.cobuy-rec-error-msg,
+.cobuy-rec-insufficient-desc,
+.cobuy-rec-empty-desc {
+  font-size: 0.84rem;
+  color: #94a3b8;
+  max-width: 480px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.cobuy-rec-retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.52rem 1.1rem;
+  margin-top: 0.5rem;
+  background: #2563eb;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cobuy-rec-retry-btn:hover {
+  background: #1d4ed8;
+}
+
+.cobuy-clear-search-link {
+  background: none;
+  border: none;
+  color: #38bdf8;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  margin-top: 0.4rem;
+}
+
 
 
 

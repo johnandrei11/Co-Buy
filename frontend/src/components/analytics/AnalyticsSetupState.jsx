@@ -35,11 +35,30 @@ const AnalyticsSetupState = ({
 
   // File validity check: file exists, upload is success, and no blocking upload error
   const hasValidDataset = Boolean(
-    (file || (stats && stats.active)) &&
+    file &&
+    uploadStatus === 'success' &&
     uploadStatus !== 'uploading' &&
-    uploadStatus !== 'error' &&
-    (!stats || stats.total_transactions > 0 || stats.active || file)
+    uploadStatus !== 'error'
   );
+
+  const [fileRemovedNotice, setFileRemovedNotice] = useState(false);
+
+  const handleClearFile = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    setFileRemovedNotice(true);
+    setTimeout(() => {
+      setFileRemovedNotice(false);
+    }, 4000);
+    if (onClearFile) {
+      onClearFile();
+    }
+  };
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -57,6 +76,7 @@ const AnalyticsSetupState = ({
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
+    setFileRemovedNotice(false);
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const droppedFile = e.dataTransfer.files[0];
@@ -77,9 +97,9 @@ const AnalyticsSetupState = ({
     return `${(bytes / 1048576).toFixed(1)} MB`;
   };
 
-  const fileName = file?.name || (stats?.active ? 'Active Dataset' : null);
+  const fileName = file?.name || null;
   const fileSize = file?.size ? formatFileSize(file.size) : null;
-  const txCount = stats?.total_transactions ? `${stats.total_transactions.toLocaleString()} rows` : null;
+  const txCount = (file && stats?.total_transactions) ? `${stats.total_transactions.toLocaleString()} rows` : null;
 
   return (
     <div className="cobuy-setup-container fade-in">
@@ -297,15 +317,22 @@ const AnalyticsSetupState = ({
                   <button
                     type="button"
                     className="cobuy-status-remove-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onClearFile();
-                    }}
+                    onClick={handleClearFile}
                     title="Remove or change file"
                   >
                     <X size={14} />
                   </button>
                 )}
+              </div>
+            ) : fileRemovedNotice ? (
+              <div className="cobuy-file-status-item is-removed-notice">
+                <X size={16} style={{ color: 'var(--text-dim)', flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontWeight: '600', color: 'var(--text-main)' }}>Dataset removed</span>
+                  <span style={{ color: 'var(--text-dim)', fontSize: '0.78rem', marginLeft: '0.5rem' }}>
+                    Choose or drag a new file above to analyze
+                  </span>
+                </div>
               </div>
             ) : (
               <div className="cobuy-file-status-item is-idle">
@@ -386,15 +413,33 @@ const AnalyticsSetupState = ({
           </div>
         </div>
 
-        {/* Automatic processing path: No Run Analysis button required */}
-        {hasValidDataset && (
-          <div className="cobuy-action-bar-right">
+        <div className="cobuy-action-bar-right">
+          {isAnalyzing ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', color: 'var(--primary-color)', fontSize: '0.85rem', fontWeight: '700' }}>
               <Loader2 size={16} className="spin" />
               <span>Analyzing Shopping Patterns...</span>
             </div>
-          </div>
-        )}
+          ) : uploadStatus === 'uploading' ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', color: 'var(--primary-color)', fontSize: '0.85rem', fontWeight: '600' }}>
+              <Loader2 size={16} className="spin" />
+              <span>Uploading Dataset...</span>
+            </div>
+          ) : hasValidDataset ? (
+            <button
+              type="button"
+              className="btn btn-primary cobuy-run-analysis-btn"
+              onClick={onRunAnalysis}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.55rem 1.25rem', borderRadius: '10px', fontWeight: '600' }}
+            >
+              <Sparkles size={16} />
+              <span>Run Analysis</span>
+            </button>
+          ) : (
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-dim)', fontWeight: '500' }}>
+              Waiting for dataset upload...
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

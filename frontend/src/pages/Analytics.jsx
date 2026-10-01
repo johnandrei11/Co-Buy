@@ -14,7 +14,7 @@ import {
 import AnalyticsSetupState from '../components/analytics/AnalyticsSetupState';
 import SampleFileModal from '../components/analytics/SampleFileModal';
 import ItemFrequencies from '../components/analytics/ItemFrequencies';
-import RecommendationsView from '../components/analytics/RecommendationsView';
+import BusinessRecommendations from '../components/analytics/BusinessRecommendations';
 import CategoryFilterBar from '../components/analytics/CategoryFilterBar';
 import MiningParametersModal from '../components/analytics/MiningParametersModal';
 import MiningEngineModal from '../components/analytics/MiningEngineModal';
@@ -347,6 +347,7 @@ const Analytics = () => {
         const csvMarketType = results?.metrics?.adaptive_thresholds?.market_type || 'Default/unknown';
         const anchor = suggestion.antecedents.join(', ');
         const csvCategory = isHighConfidence ? 'bundle' : isMediumConfidence ? 'cross_promo' : 'placement';
+        const action = getSuggestedAction(csvCategory, csvMarketType, anchor, suggestion);
         const note = "";
         csvContent += `${fbt},${patternStr},${confidencePct},${liftValue},"${action}${note}"\n`;
       });
@@ -544,9 +545,10 @@ const Analytics = () => {
       }
       await fetchStats(response.data.dataset_id);
       setUploadStatus('success');
-      setForceSetupView(false);
       if (!response.data.is_empty && response.data.transaction_count > 0) {
         await runMining({ dataset_id: response.data.dataset_id });
+      } else {
+        setForceSetupView(false);
       }
     } catch (err) {
       setUploadStatus('error');
@@ -836,6 +838,38 @@ const Analytics = () => {
     );
   }
 
+  const handleNewAnalysis = () => {
+    setForceSetupView(true);
+    setFile(null);
+    setUploadStatus('idle');
+    setUploadError(null);
+    setDuplicateNotice(null);
+    sessionStorage.removeItem('analytics_file_name');
+  };
+
+  const handleClearFile = () => {
+    setFile(null);
+    setUploadStatus('idle');
+    setUploadError(null);
+    setDuplicateNotice(null);
+    sessionStorage.removeItem('analytics_file_name');
+    setStats(prev => ({
+      ...prev,
+      active: false,
+      total_transactions: 0,
+      unique_items_count: 0
+    }));
+  };
+
+  const handleBackToResults = () => {
+    setForceSetupView(false);
+    const dsName = localStorage.getItem('activeDatasetName') || sessionStorage.getItem('analytics_file_name');
+    if (dsName) {
+      setFile({ name: dsName });
+      setUploadStatus('success');
+    }
+  };
+
   if (!hasResults || forceSetupView) {
     return (
       <div className="cobuy-analytics-container fade-in">
@@ -844,7 +878,7 @@ const Analytics = () => {
             <button
               type="button"
               className="cobuy-new-analysis-btn"
-              onClick={() => setForceSetupView(false)}
+              onClick={handleBackToResults}
             >
               ← Back to Results
             </button>
@@ -856,12 +890,7 @@ const Analytics = () => {
           uploadError={uploadError}
           stats={stats}
           onFileUpload={handleFileUpload}
-          onClearFile={() => {
-            setFile(null);
-            setUploadStatus('idle');
-            setUploadError(null);
-            sessionStorage.removeItem('analytics_file_name');
-          }}
+          onClearFile={handleClearFile}
           isAnalyzing={miningStatus === 'mining'}
           onRunAnalysis={() => runMining()}
           onOpenParamsModal={() => setShowParamsModal(true)}
@@ -912,7 +941,7 @@ const Analytics = () => {
           <button
             type="button"
             className="cobuy-new-analysis-btn"
-            onClick={() => setForceSetupView(true)}
+            onClick={handleNewAnalysis}
             title="Upload or analyze another dataset"
           >
             <RotateCcw size={13} />
@@ -921,10 +950,9 @@ const Analytics = () => {
 
           <button
             type="button"
-            className="cobuy-new-analysis-btn"
+            className="cobuy-new-analysis-btn cobuy-params-btn"
             onClick={() => setShowParamsModal(true)}
             title="Adjust algorithm thresholds"
-            style={{ background: 'var(--inner-box-bg)', color: 'var(--text-muted)' }}
           >
             <Sliders size={13} />
             <span>Parameters</span>
@@ -993,22 +1021,9 @@ const Analytics = () => {
         loadingCoBought={loadingCoBought}
       />
 
-      {/* ── 3. Bottom Section: Full-Width Recommendations Table ── */}
-      <RecommendationsView
-        results={results}
-        rules={filteredConsolidatedRules}
-        groupedSets={filteredGroupedSets}
-        activeSubTab={activeSubTab}
-        onSubTabChange={(tab) => setActiveSubTab(tab)}
-        recommendationSearchTerm={recommendationSearchTerm}
-        onSearchChange={(term) => setRecommendationSearchTerm(term)}
-        marketType={results?.metrics?.adaptive_thresholds?.market_type || 'Default/unknown'}
-        getSuggestedAction={getSuggestedAction}
-        stats={stats}
-        onExportCSV={handleExportCSV}
-        onShowCalculations={() => setShowMiningModal(true)}
-        onOpenParamsModal={() => setShowParamsModal(true)}
-        miningStatus={miningStatus}
+      {/* ── 3. Bottom Section: Business Recommendations Advisory Engine ── */}
+      <BusinessRecommendations
+        datasetId={datasetId}
       />
 
       {/* ── 4. Mining Parameters Modal ── */}

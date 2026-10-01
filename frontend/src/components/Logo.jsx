@@ -34,7 +34,8 @@ const Logo = ({ size = 'md', showSubtitle = false, className = '' }) => {
         flexDirection: 'column',
         alignItems: 'flex-start',
         userSelect: 'none',
-        width: '100%'
+        width: 'auto',
+        flexShrink: 0
       }}
     >
       <div 

@@ -306,14 +306,7 @@ const ItemFrequencies = ({
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
                           <span>{renderHighlightedPrefix(item.name, searchTerm)}</span>
                           {item.category && item.category !== 'Uncategorized' && (
-                            <span style={{
-                              fontSize: '0.68rem',
-                              padding: '0.1rem 0.35rem',
-                              borderRadius: '4px',
-                              background: 'var(--inner-box-bg)',
-                              color: 'var(--text-dim)',
-                              fontWeight: '500'
-                            }}>
+                            <span className="cobuy-item-category-pill">
                               {item.category}
                             </span>
                           )}
@@ -424,11 +417,11 @@ const ItemFrequencies = ({
               textAlign: 'center',
               color: 'var(--text-muted)'
             }}>
-              <ShoppingCart size={28} style={{ color: '#a5b4fc', marginBottom: '0.6rem' }} />
-              <div style={{ fontWeight: '600', fontSize: '0.85rem', color: 'var(--text-main)', marginBottom: '0.25rem' }}>
+              <ShoppingCart size={28} style={{ color: 'var(--primary-color)', marginBottom: '0.6rem' }} />
+              <div style={{ fontWeight: '700', fontSize: '0.88rem', color: 'var(--text-main)', marginBottom: '0.25rem' }}>
                 Select One or More Products
               </div>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-dim)', margin: 0, maxWidth: '220px', lineHeight: '1.4' }}>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0, maxWidth: '240px', lineHeight: '1.45', fontWeight: '500' }}>
                 Click items in What's In Customers' Carts to reveal all products frequently purchased together.
               </p>
             </div>
@@ -499,20 +492,13 @@ const ItemFrequencies = ({
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
                             <span>{productName}</span>
                             {category && category !== 'Uncategorized' && (
-                              <span style={{
-                                fontSize: '0.66rem',
-                                padding: '0.1rem 0.35rem',
-                                borderRadius: '4px',
-                                background: 'rgba(99, 102, 241, 0.08)',
-                                color: '#6366f1',
-                                fontWeight: '500'
-                              }}>
+                              <span className="cobuy-item-category-pill">
                                 {category}
                               </span>
                             )}
                           </div>
                         </td>
-                        <td className="col-metric" style={{ color: isFirst ? 'var(--primary-color)' : 'var(--text-muted)' }}>
+                        <td className="col-metric" style={{ color: isFirst ? 'var(--primary-color)' : 'var(--text-main)', fontWeight: isFirst ? '800' : '700' }}>
                           {count > 0 ? `${count.toLocaleString()} times` : '—'}
                         </td>
                       </tr>
@@ -560,20 +546,13 @@ const ItemFrequencies = ({
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
                           <span>{item.name}</span>
                           {item.category && item.category !== 'Uncategorized' && (
-                            <span style={{
-                              fontSize: '0.66rem',
-                              padding: '0.1rem 0.35rem',
-                              borderRadius: '4px',
-                              background: 'var(--inner-box-bg)',
-                              color: 'var(--text-dim)',
-                              fontWeight: '500'
-                            }}>
+                            <span className="cobuy-item-category-pill">
                               {item.category}
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="col-metric" style={{ color: isFirst ? 'var(--primary-color)' : 'var(--text-muted)' }}>
+                      <td className="col-metric" style={{ color: isFirst ? 'var(--primary-color)' : 'var(--text-main)', fontWeight: isFirst ? '800' : '700' }}>
                         {(item.count || item.quantity || item.value || 0).toLocaleString()}
                       </td>
                     </tr>

@@ -35,7 +35,6 @@ import Dataset from './pages/Dataset';
 import Login, { PendingActivation, JoinPage } from './pages/Login';
 import ActivityLog from './pages/ActivityLog';
 import Logo from './components/Logo';
-import GlobalNavbarSearch from './components/GlobalNavbarSearch';
 import AdminLayout from './components/admin/AdminLayout';
 import UserLayout from './components/UserLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -738,10 +737,10 @@ function App() {
             <InvitePanel user={user} onClose={() => setShowInvitePanel(false)} />
           )}
           <Routes>
-            <Route path="/" element={isAdmin ? <ActivityLog /> : <Dashboard />} />
-            <Route path="/analytics" element={!isAdmin ? <Analytics /> : <Navigate to="/" replace />} />
-            <Route path="/evaluation" element={user?.role === 'shop_admin' ? <Evaluation /> : <Navigate to="/" replace />} />
-            <Route path="/history" element={!isAdmin ? <Dataset /> : <Navigate to="/" replace />} />
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/analytics" element={<Analytics />} />
+            <Route path="/evaluation" element={<Evaluation />} />
+            <Route path="/history" element={<Dataset />} />
             <Route path="/data" element={<Navigate to="/history" replace />} />
             <Route path="/audit-log" element={<Navigate to="/" replace />} />
             <Route path="/settings" element={<SettingsPage user={user} theme={theme} onThemeChange={setTheme} />} />

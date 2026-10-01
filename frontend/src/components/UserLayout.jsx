@@ -18,7 +18,6 @@ import {
   Store
 } from 'lucide-react';
 import Logo from './Logo';
-import GlobalNavbarSearch from './GlobalNavbarSearch';
 import NotificationBell from './NotificationBell';
 
 export default function UserLayout({
@@ -164,8 +163,8 @@ export default function UserLayout({
           transition: 'background 0.2s ease, border-color 0.2s ease'
         }}
       >
-        {/* Left: Permanent 3-line Hamburger Menu Button (Invariant: never transforms to X) + CoBuy Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        {/* Left: Permanent 3-line Hamburger Menu Button (Invariant: never transforms to X) + CoBuy Logo + Store Badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexShrink: 0 }}>
           <button
             id="user-hamburger-btn"
             type="button"
@@ -190,31 +189,42 @@ export default function UserLayout({
             <Menu size={22} />
           </button>
 
-          <Link to="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none', gap: '0.75rem' }}>
+          <Link to="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none', flexShrink: 0 }} title="CoBuy Home">
             <Logo size="md" />
-            {user?.store_name && (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-                padding: '2px 8px',
-                borderRadius: '6px',
-                background: isDark ? 'rgba(59, 130, 246, 0.15)' : '#eff6ff',
-                border: isDark ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid #bfdbfe',
-                color: '#3b82f6',
-                fontSize: '0.72rem',
-                fontWeight: 700
-              }}>
-                <Store size={12} />
-                <span>{user.store_name}</span>
-              </div>
-            )}
           </Link>
-        </div>
 
-        {/* Center: Global Search Bar */}
-        <div style={{ flex: 1, maxWidth: '420px', margin: '0 1.5rem' }}>
-          <GlobalNavbarSearch />
+          {user?.store_name && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexShrink: 0 }}>
+              <div style={{
+                width: '1px',
+                height: '22px',
+                background: isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(0, 0, 0, 0.12)',
+              }} />
+
+              <div 
+                className="cobuy-header-store-badge"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '6px 14px',
+                  borderRadius: '8px',
+                  background: isDark ? 'rgba(59, 130, 246, 0.12)' : '#eff6ff',
+                  border: isDark ? '1px solid rgba(59, 130, 246, 0.28)' : '1px solid #bfdbfe',
+                  color: isDark ? '#93c5fd' : '#2563eb',
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  boxShadow: isDark ? '0 1px 4px rgba(0, 0, 0, 0.2)' : '0 1px 2px rgba(37, 99, 235, 0.06)'
+                }}
+                title={`Active Store: ${user.store_name}`}
+              >
+                <Store size={15} style={{ color: '#3b82f6', flexShrink: 0 }} />
+                <span style={{ whiteSpace: 'nowrap', letterSpacing: '0.01em' }}>{user.store_name}</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right Group: Theme Toggle, Notifications & User Dropdown */}
@@ -500,8 +510,6 @@ export default function UserLayout({
           {/* Main Dashboard item */}
           {(() => {
             const isDashboardActive = location.pathname === '/';
-            const DashIcon = isAdmin ? ScrollText : LayoutDashboard;
-            const dashLabel = isAdmin ? 'Audit Log' : 'Dashboard';
             return (
               <NavLink
                 to="/"
@@ -541,8 +549,8 @@ export default function UserLayout({
                   }
                 }}
               >
-                <DashIcon size={18} color={isDashboardActive ? '#ffffff' : '#94a3b8'} style={{ flexShrink: 0, transition: 'color 0.15s ease' }} />
-                <span style={{ whiteSpace: 'nowrap' }}>{dashLabel}</span>
+                <LayoutDashboard size={18} color={isDashboardActive ? '#ffffff' : '#94a3b8'} style={{ flexShrink: 0, transition: 'color 0.15s ease' }} />
+                <span style={{ whiteSpace: 'nowrap' }}>Dashboard</span>
               </NavLink>
             );
           })()}
@@ -560,149 +568,97 @@ export default function UserLayout({
             Analytics & Tools
           </div>
 
-          {!isAdmin && (
-            <>
-              {(() => {
-                const isActive = location.pathname.startsWith('/analytics');
-                return (
-                  <NavLink
-                    to="/analytics"
-                    onClick={() => setSidebarOpen(false)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.75rem',
-                      padding: '0.52rem 0.85rem',
-                      borderRadius: '8px',
-                      marginBottom: '3px',
-                      textDecoration: 'none',
-                      fontSize: '0.86rem',
-                      lineHeight: 1.3,
-                      fontWeight: isActive ? 600 : 500,
-                      color: isActive ? '#ffffff' : '#94a3b8',
-                      background: isActive ? '#2563eb' : 'transparent',
-                      boxShadow: isActive ? '0 2px 8px rgba(37, 99, 235, 0.35)' : 'none',
-                      transition: 'all 0.15s ease',
-                      boxSizing: 'border-box'
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isActive) {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-                        e.currentTarget.style.color = '#ffffff';
-                        const icon = e.currentTarget.querySelector('svg');
-                        if (icon) icon.style.color = '#ffffff';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isActive) {
-                        e.currentTarget.style.background = 'transparent';
-                        e.currentTarget.style.color = '#94a3b8';
-                        const icon = e.currentTarget.querySelector('svg');
-                        if (icon) icon.style.color = '#94a3b8';
-                      }
-                    }}
-                  >
-                    <BarChart3 size={18} color={isActive ? '#ffffff' : '#94a3b8'} style={{ flexShrink: 0, transition: 'color 0.15s ease' }} />
-                    <span style={{ whiteSpace: 'nowrap' }}>Analytics</span>
-                  </NavLink>
-                );
-              })()}
+          {(() => {
+            const isActive = location.pathname.startsWith('/analytics');
+            return (
+              <NavLink
+                to="/analytics"
+                onClick={() => setSidebarOpen(false)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  padding: '0.52rem 0.85rem',
+                  borderRadius: '8px',
+                  marginBottom: '3px',
+                  textDecoration: 'none',
+                  fontSize: '0.86rem',
+                  lineHeight: 1.3,
+                  fontWeight: isActive ? 600 : 500,
+                  color: isActive ? '#ffffff' : '#94a3b8',
+                  background: isActive ? '#2563eb' : 'transparent',
+                  boxShadow: isActive ? '0 2px 8px rgba(37, 99, 235, 0.35)' : 'none',
+                  transition: 'all 0.15s ease',
+                  boxSizing: 'border-box'
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive) {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                    e.currentTarget.style.color = '#ffffff';
+                    const icon = e.currentTarget.querySelector('svg');
+                    if (icon) icon.style.color = '#ffffff';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) {
+                    e.currentTarget.style.background = 'transparent';
+                    e.currentTarget.style.color = '#94a3b8';
+                    const icon = e.currentTarget.querySelector('svg');
+                    if (icon) icon.style.color = '#94a3b8';
+                  }
+                }}
+              >
+                <BarChart3 size={18} color={isActive ? '#ffffff' : '#94a3b8'} style={{ flexShrink: 0, transition: 'color 0.15s ease' }} />
+                <span style={{ whiteSpace: 'nowrap' }}>Analytics</span>
+              </NavLink>
+            );
+          })()}
 
-              {(() => {
-                const isActive = location.pathname.startsWith('/history') || location.pathname.startsWith('/data');
-                return (
-                  <NavLink
-                    to="/history"
-                    onClick={() => setSidebarOpen(false)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.75rem',
-                      padding: '0.52rem 0.85rem',
-                      borderRadius: '8px',
-                      marginBottom: '3px',
-                      textDecoration: 'none',
-                      fontSize: '0.86rem',
-                      lineHeight: 1.3,
-                      fontWeight: isActive ? 600 : 500,
-                      color: isActive ? '#ffffff' : '#94a3b8',
-                      background: isActive ? '#2563eb' : 'transparent',
-                      boxShadow: isActive ? '0 2px 8px rgba(37, 99, 235, 0.35)' : 'none',
-                      transition: 'all 0.15s ease',
-                      boxSizing: 'border-box'
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isActive) {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-                        e.currentTarget.style.color = '#ffffff';
-                        const icon = e.currentTarget.querySelector('svg');
-                        if (icon) icon.style.color = '#ffffff';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isActive) {
-                        e.currentTarget.style.background = 'transparent';
-                        e.currentTarget.style.color = '#94a3b8';
-                        const icon = e.currentTarget.querySelector('svg');
-                        if (icon) icon.style.color = '#94a3b8';
-                      }
-                    }}
-                  >
-                    <History size={18} color={isActive ? '#ffffff' : '#94a3b8'} style={{ flexShrink: 0, transition: 'color 0.15s ease' }} />
-                    <span style={{ whiteSpace: 'nowrap' }}>History</span>
-                  </NavLink>
-                );
-              })()}
-            </>
-          )}
-
-          {isAdmin && (
-            (() => {
-              const isActive = location.pathname.startsWith('/evaluation');
-              return (
-                <NavLink
-                  to="/evaluation"
-                  onClick={() => setSidebarOpen(false)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.75rem',
-                    padding: '0.52rem 0.85rem',
-                    borderRadius: '8px',
-                    marginBottom: '3px',
-                    textDecoration: 'none',
-                    fontSize: '0.86rem',
-                    lineHeight: 1.3,
-                    fontWeight: isActive ? 600 : 500,
-                    color: isActive ? '#ffffff' : '#94a3b8',
-                    background: isActive ? '#2563eb' : 'transparent',
-                    boxShadow: isActive ? '0 2px 8px rgba(37, 99, 235, 0.35)' : 'none',
-                    transition: 'all 0.15s ease',
-                    boxSizing: 'border-box'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isActive) {
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-                      e.currentTarget.style.color = '#ffffff';
-                      const icon = e.currentTarget.querySelector('svg');
-                      if (icon) icon.style.color = '#ffffff';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isActive) {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = '#94a3b8';
-                      const icon = e.currentTarget.querySelector('svg');
-                      if (icon) icon.style.color = '#94a3b8';
-                    }
-                  }}
-                >
-                  <Layers size={18} color={isActive ? '#ffffff' : '#94a3b8'} style={{ flexShrink: 0, transition: 'color 0.15s ease' }} />
-                  <span style={{ whiteSpace: 'nowrap' }}>Evaluation</span>
-                </NavLink>
-              );
-            })()
-          )}
+          {(() => {
+            const isActive = location.pathname.startsWith('/history') || location.pathname.startsWith('/data');
+            return (
+              <NavLink
+                to="/history"
+                onClick={() => setSidebarOpen(false)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  padding: '0.52rem 0.85rem',
+                  borderRadius: '8px',
+                  marginBottom: '3px',
+                  textDecoration: 'none',
+                  fontSize: '0.86rem',
+                  lineHeight: 1.3,
+                  fontWeight: isActive ? 600 : 500,
+                  color: isActive ? '#ffffff' : '#94a3b8',
+                  background: isActive ? '#2563eb' : 'transparent',
+                  boxShadow: isActive ? '0 2px 8px rgba(37, 99, 235, 0.35)' : 'none',
+                  transition: 'all 0.15s ease',
+                  boxSizing: 'border-box'
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive) {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                    e.currentTarget.style.color = '#ffffff';
+                    const icon = e.currentTarget.querySelector('svg');
+                    if (icon) icon.style.color = '#ffffff';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) {
+                    e.currentTarget.style.background = 'transparent';
+                    e.currentTarget.style.color = '#94a3b8';
+                    const icon = e.currentTarget.querySelector('svg');
+                    if (icon) icon.style.color = '#94a3b8';
+                  }
+                }}
+              >
+                <History size={18} color={isActive ? '#ffffff' : '#94a3b8'} style={{ flexShrink: 0, transition: 'color 0.15s ease' }} />
+                <span style={{ whiteSpace: 'nowrap' }}>History</span>
+              </NavLink>
+            );
+          })()}
 
           {/* Section: Account & Preferences */}
           <div style={{

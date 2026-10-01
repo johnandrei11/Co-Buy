@@ -323,8 +323,8 @@ export default function AdminUsers() {
           >
             <option value="all">All Roles</option>
             <option value="system_admin">System Admin</option>
-            <option value="business_admin">Business Admin</option>
-            <option value="staff">Staff / Team Member</option>
+            <option value="business_admin">Shop Owner</option>
+            <option value="staff">Staff Member</option>
           </select>
 
           {/* Status Filter */}
@@ -405,7 +405,7 @@ export default function AdminUsers() {
                           color: isSysAdmin ? '#991b1b' : isBizAdmin ? '#1d4ed8' : 'var(--admin-text-secondary)',
                           border: '1px solid var(--admin-input-border)'
                         }}>
-                          {isSysAdmin ? 'System Admin' : isBizAdmin ? 'Business Admin' : 'Staff / Member'}
+                          {isSysAdmin ? 'System Admin' : isBizAdmin ? 'Shop Owner' : 'Staff Member'}
                         </span>
                       </td>
                       <td style={{ padding: '0.85rem 1rem', color: 'var(--admin-text-secondary)' }}>
@@ -565,8 +565,8 @@ export default function AdminUsers() {
                     onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
                     style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
                   >
-                    <option value="business_admin">Business Admin</option>
-                    <option value="staff">Staff / Member</option>
+                    <option value="business_admin">Shop Owner</option>
+                    <option value="staff">Staff Member</option>
                     <option value="system_admin">System Admin</option>
                   </select>
                 </div>
@@ -671,8 +671,8 @@ export default function AdminUsers() {
                     onChange={(e) => setEditUser({ ...editUser, role: e.target.value })}
                     style={{ width: '100%', padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
                   >
-                    <option value="business_admin">Business Admin</option>
-                    <option value="staff">Staff / Member</option>
+                    <option value="business_admin">Shop Owner</option>
+                    <option value="staff">Staff Member</option>
                     <option value="system_admin">System Admin</option>
                   </select>
                 </div>
