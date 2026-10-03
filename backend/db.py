@@ -320,6 +320,25 @@ def init_db():
             "UPDATE users SET role = 'system_admin', account_type = 'system_admin', name = 'System Admin' WHERE email = 'admin@ruleminer.ai'"
         )
 
+    # Seed default shop admin (Jane Smith - But First Coffee)
+    cursor.execute('SELECT * FROM users WHERE email = ?', ('janesmith@gmail.com',))
+    if not cursor.fetchone():
+        cursor.execute("SELECT id FROM stores WHERE name = 'But First Coffee'")
+        store_row = cursor.fetchone()
+        if not store_row:
+            cursor.execute(
+                "INSERT INTO stores (name, owner_email, business_type, status) VALUES (?, ?, ?, ?)",
+                ('But First Coffee', 'janesmith@gmail.com', 'Retail', 'Active')
+            )
+            store_id = cursor.lastrowid
+        else:
+            store_id = store_row[0]
+
+        cursor.execute(
+            'INSERT INTO users (email, password, name, role, account_type, store_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            ('janesmith@gmail.com', 'password123', 'Jane Smith', 'shop_admin', 'admin', store_id, 'active')
+        )
+
     # Seed default system settings
     default_settings = [
         ('system_name', 'CoBuy Rule Mining System', 'general'),
