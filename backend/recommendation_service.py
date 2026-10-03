@@ -112,7 +112,7 @@ def synthesize_dynamic_advice(
     supp_pct = round(support * 100, 1)
     conf_pct = round(confidence * 100, 1)
     lift_ratio = round(lift, 2)
-    vel_pct = int(round(velocity_delta * 100))
+    vel_pct = round(velocity_delta * 100)
 
     # Detect product domain affinities (e.g. breakfast/morning vs general retail)
     ant_lower = ant_name.lower()
@@ -379,7 +379,7 @@ def synthesize_dynamic_advice(
             ]
 
     # Humanized narrative statistical behavior statement
-    fraction_text = f"1 in every {max(2, int(round(100 / max(supp_pct, 1))))} orders"
+    fraction_text = f"1 in every {max(2, round(100 / max(supp_pct, 1)))} orders"
     observed_behavior = f"Appears in {tx_count:,} transactions ({supp_pct}% of total baskets, approximately {fraction_text}). When {ant_name} is in basket, {cons_name} is included with {conf_pct}% conditional probability."
 
     return {
@@ -433,7 +433,7 @@ class RecommendationEngine:
             '60d': 60,
             '90d': 90
         }
-        target_days = range_days_map.get(str(date_range).lower())
+        target_days = range_days_map.get(date_range.lower())
 
         if target_days and all_dates:
             try:
@@ -541,7 +541,7 @@ class RecommendationEngine:
                 frequent_itemsets = apriori(df, min_support=max(min_supp / 2, 0.005), use_colnames=True)
             
             if not frequent_itemsets.empty:
-                rules_df = association_rules(frequent_itemsets, metric="confidence", min_threshold=min_conf)
+                rules_df = association_rules(pd.DataFrame(frequent_itemsets), metric="confidence", min_threshold=min_conf)
             else:
                 rules_df = pd.DataFrame()
         except Exception:

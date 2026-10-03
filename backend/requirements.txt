@@ -1,5 +1,6 @@
-﻿flask
+flask
 flask-cors
 pandas
 mlxtend
 openpyxl
+gunicorn

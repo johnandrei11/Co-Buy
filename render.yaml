@@ -1,0 +1,21 @@
+services:
+  # Backend Python API
+  - type: web
+    name: cobuy-backend
+    env: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --workers=2 --threads=4 --timeout=120 --bind=0.0.0.0:$PORT app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: FLASK_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_PATH
+        value: /var/data/database.db
+    disk:
+      name: cobuy-data
+      mountPath: /var/data
+      sizeGB: 1

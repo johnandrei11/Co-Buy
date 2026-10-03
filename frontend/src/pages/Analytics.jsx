@@ -20,7 +20,7 @@ import MiningParametersModal from '../components/analytics/MiningParametersModal
 import MiningEngineModal from '../components/analytics/MiningEngineModal';
 import '../components/analytics/analytics.css';
 
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../config/api';
 
 const Analytics = () => {
   const [searchParams, setSearchParams] = useSearchParams();

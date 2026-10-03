@@ -49,8 +49,7 @@ import AdminProfile from './pages/admin/AdminProfile';
 import { AdminThemeProvider } from './context/AdminThemeContext';
 import './index.css';
 import axios from 'axios';
-
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from './config/api';
 
 axios.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');

@@ -14,7 +14,7 @@ import secrets
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import datetime
+import io
 from datetime import datetime, timedelta, timezone
 import re
 from mlxtend.frequent_patterns import apriori, fpgrowth, association_rules
@@ -40,6 +40,11 @@ CORS(app)
 
 # Initialize database tables
 db.init_db()
+
+@app.route('/')
+@app.route('/healthz')
+def health_check():
+    return jsonify({'status': 'healthy', 'service': 'cobuy-backend'}), 200
 
 # ── Cryptographic Token Generation & Verification ────────────────────────────
 
@@ -186,8 +191,8 @@ def require_system_admin():
     Returns (user_info, error_tuple).
     """
     user_info, err = require_authenticated_user()
-    if err:
-        return None, err
+    if err or not user_info:
+        return None, (err if err else (jsonify({'error': 'Unauthorized: invalid or missing authentication'}), 401))
     if user_info.get('role') != 'system_admin':
         return None, (jsonify({'error': 'Forbidden: System Administrator access required'}), 403)
     return user_info, None
@@ -362,7 +367,7 @@ def standardize_date_string(val):
     # 5. Fallback via pandas to_datetime (handles textual months: 05-May-2026, March 5, 2026, etc.)
     try:
         dt = pd.to_datetime(sval, errors='coerce')
-        if pd.notna(dt):
+        if pd.notna(dt) and hasattr(dt, 'strftime'):
             return dt.strftime('%Y-%m-%d')
     except Exception:
         pass
@@ -464,7 +469,8 @@ def parse_df_to_transactions(df):
     has_id = any(any(k in c for k in ['id', 'invoice', 'order', 'receipt', 'trans', 'bill', 'txn']) for c in col_names_lower)
 
     if not has_id and len(df.columns) > 3:
-        first_col_is_num = pd.to_numeric(df.iloc[:, 0], errors='coerce').notna().mean() > 0.8
+        first_col_num = pd.to_numeric(df.iloc[:, 0], errors='coerce')
+        first_col_is_num = bool(pd.Series(first_col_num).notna().mean() > 0.8)
         if not first_col_is_num:
             transactions = []
             missing_removed = 0
@@ -844,26 +850,26 @@ def register():
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
     user_info, err = require_authenticated_user()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
     user_email = user_info['email']
 
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
     
     file = request.files['file']
-    if file.filename == '':
+    if not file or not file.filename:
         return jsonify({'error': 'No selected file'}), 400
 
+    filename = file.filename
     try:
         file_content = file.read()
         file_hash = hashlib.sha256(file_content).hexdigest()
-        file.seek(0)
 
-        if file.filename.endswith('.csv'):
-            df = pd.read_csv(file)
-        elif file.filename.endswith(('.xls', '.xlsx')):
-            df = pd.read_excel(file)
+        if filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(file_content))
+        elif filename.endswith(('.xls', '.xlsx')):
+            df = pd.read_excel(io.BytesIO(file_content))
         else:
             return jsonify({'error': 'Invalid file format'}), 400
 
@@ -871,7 +877,7 @@ def upload_file():
         transactions, duplicates_removed, missing_removed, basket_values_list, date_range_days, basket_avg, tx_dates_list, detected_cols, item_details = parse_df_to_transactions(df)
 
         if not transactions:
-            ds_id = db.add_dataset(file.filename, 0, 0, user_email=user_email, file_hash=file_hash, market_type='Default/unknown',
+            ds_id = db.add_dataset(filename, 0, 0, user_email=user_email, file_hash=file_hash, market_type='Default/unknown',
                                    missing_count=missing_removed, duplicates_count=duplicates_removed, columns_detected=detected_cols)
             return jsonify({
                 'message': 'File uploaded with empty dataset warning',
@@ -962,8 +968,8 @@ def upload_file():
 @app.route('/api/mine', methods=['POST'])
 def mine_rules():
     user_info, err = require_authenticated_user()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
     user_email = user_info['email']
 
     params = request.json or {}
@@ -973,8 +979,8 @@ def mine_rules():
         return jsonify({'error': 'No dataset selected or active in analytics'}), 400
 
     dataset_info, auth_err = authorize_dataset_access(dataset_id, user_info)
-    if auth_err:
-        return auth_err[0], auth_err[1]
+    if auth_err or not dataset_info:
+        return auth_err[0] if auth_err else jsonify({'error': 'Forbidden'}), auth_err[1] if auth_err else 403
 
     cache_key = (str(dataset_id), str(user_email), str(algorithm), str(params.get('min_support')), str(params.get('min_confidence')), str(params.get('min_lift')))
     cached = CACHE_MINE.get(cache_key)
@@ -1048,7 +1054,7 @@ def mine_rules():
             if frequent_itemsets.empty:
                 current_rules = pd.DataFrame()
             else:
-                current_rules = association_rules(frequent_itemsets, metric="confidence", min_threshold=curr_conf)
+                current_rules = association_rules(pd.DataFrame(frequent_itemsets), metric="confidence", min_threshold=curr_conf)
                 if not current_rules.empty:
                     current_rules = current_rules[current_rules['lift'] >= fixed_lift]
                     
@@ -1416,8 +1422,8 @@ def mine_rules():
 @app.route('/api/v2/recommendations', methods=['GET', 'POST'])
 def get_recommendations_v2():
     user_info, err = require_authenticated_user()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
     user_email = user_info['email']
 
     # Support both GET query parameters and POST JSON body
@@ -1440,7 +1446,7 @@ def get_recommendations_v2():
         page_size = int(request.args.get('page_size', 10))
 
     if not dataset_id:
-        user_datasets = db.get_user_datasets(user_email=user_email)
+        user_datasets = db.get_datasets(user_email=user_email)
         if user_datasets:
             dataset_id = user_datasets[0]['id']
         else:
@@ -1459,8 +1465,8 @@ def get_recommendations_v2():
             })
 
     dataset_info, auth_err = authorize_dataset_access(dataset_id, user_info)
-    if auth_err:
-        return auth_err[0], auth_err[1]
+    if auth_err or not dataset_info:
+        return auth_err[0] if auth_err else jsonify({'error': 'Forbidden'}), auth_err[1] if auth_err else 403
 
     force_refresh = request.args.get('refresh') == 'true' or request.args.get('nocache') == '1' or (request.is_json and request.json and (request.json.get('refresh') is True or request.json.get('nocache') is True))
     cache_key = (str(dataset_id), str(user_email), str(category).upper(), str(date_range), str(search).strip().lower())
@@ -1508,8 +1514,8 @@ def get_recommendations_v2():
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
     user_info, err = require_authenticated_user()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
     user_email = user_info['email']
 
     dataset_id = request.args.get('dataset_id')
@@ -1525,10 +1531,10 @@ def get_stats():
         })
 
     dataset_info, auth_err = authorize_dataset_access(dataset_id, user_info)
-    if auth_err:
-        return auth_err[0], auth_err[1]
+    if auth_err or not dataset_info:
+        return auth_err[0] if auth_err else jsonify({'error': 'Forbidden'}), auth_err[1] if auth_err else 403
 
-    cache_key = (str(dataset_id), str(user_email))
+    cache_key = (str(dataset_id), user_email)
     cached = CACHE_STATS.get(cache_key)
     if cached and (time.time() - cached['time'] < 300):
         return jsonify(cached['data'])
@@ -1571,9 +1577,9 @@ def get_stats():
     formatted_all_items = [
         {
             'name': k, 
-            'value': int(v),
-            'count': int(v),
-            'quantity': int(v),
+            'value': v,
+            'count': v,
+            'quantity': v,
             'category': cat_map.get(k, 'Uncategorized'),
             'support': float(v) / total_transactions,
             'quantity_share': round((float(v) / total_items_sold) * 100, 1),
@@ -1663,8 +1669,8 @@ def get_stats():
 @app.route('/api/frequently_bought_together', methods=['GET', 'POST'])
 def get_frequently_bought_together():
     user_info, err = require_authenticated_user()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
     user_email = user_info['email']
 
     dataset_id = request.args.get('dataset_id')
@@ -1673,8 +1679,8 @@ def get_frequently_bought_together():
 
     if dataset_id:
         dataset_info, auth_err = authorize_dataset_access(dataset_id, user_info)
-        if auth_err:
-            return auth_err[0], auth_err[1]
+        if auth_err or not dataset_info:
+            return auth_err[0] if auth_err else jsonify({'error': 'Forbidden'}), auth_err[1] if auth_err else 403
 
     # Collect selected products from query params or JSON body
     selected_products = []
@@ -1803,9 +1809,10 @@ def load_template():
         'coffee': 'coffee_shop.csv'
     }
     
-    filename = filename_map.get(template_type)
-    if not filename:
+    if not template_type or template_type not in filename_map:
         return jsonify({'error': 'Invalid template type'}), 400
+        
+    filename = filename_map[template_type]
         
     try:
         # Check if the file is in the workspace root or parent
@@ -1853,8 +1860,8 @@ def load_template():
 @app.route('/api/datasets', methods=['GET'])
 def get_datasets():
     user_info, err = require_authenticated_user()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
     user_email = user_info['email']
     store_id = _get_store_id_for_user(user_info)
     show_all = request.args.get('all') == 'true'
@@ -1869,13 +1876,13 @@ def get_datasets():
 @app.route('/api/datasets/<int:dataset_id>', methods=['DELETE'])
 def delete_dataset_endpoint(dataset_id):
     user_info, err = require_authenticated_user()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
     user_email = user_info['email']
 
     dataset_info, auth_err = authorize_dataset_access(dataset_id, user_info)
-    if auth_err:
-        return auth_err[0], auth_err[1]
+    if auth_err or not dataset_info:
+        return auth_err[0] if auth_err else jsonify({'error': 'Forbidden'}), auth_err[1] if auth_err else 403
 
     db.delete_dataset(dataset_id, user_email=user_email)
     invalidate_dataset_cache(dataset_id)
@@ -1937,7 +1944,7 @@ def generate_recommendations_csv(dataset_id, user_email=None):
         if frequent_itemsets.empty:
             current_rules = pd.DataFrame()
         else:
-            current_rules = association_rules(frequent_itemsets, metric="confidence", min_threshold=curr_conf)
+            current_rules = association_rules(pd.DataFrame(frequent_itemsets), metric="confidence", min_threshold=curr_conf)
             if not current_rules.empty:
                 current_rules = current_rules[current_rules['lift'] >= fixed_lift]
                 
@@ -1982,7 +1989,7 @@ def generate_recommendations_csv(dataset_id, user_email=None):
             items = list(row['itemsets'])
             items_str = f'"{", ".join(items)}"'
             supp_val = float(row['support'])
-            qty = int(round(supp_val * num_tx))
+            qty = round(supp_val * num_tx)
             size_str = f"{len(items)}-item set"
             supp_pct = f"{(supp_val * 100):.2f}%"
             csv_lines.append(f"{items_str},{qty},{size_str},{supp_pct}")
@@ -2027,8 +2034,8 @@ def generate_recommendations_csv(dataset_id, user_email=None):
 @app.route('/api/recommendations/export', methods=['GET'])
 def export_recommendation_results(upload_id=None):
     user_info, err = require_authenticated_user()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
     admin_err = _require_shop_admin(user_info)
     if admin_err:
         return admin_err
@@ -2043,8 +2050,8 @@ def export_recommendation_results(upload_id=None):
         return jsonify({'error': 'Invalid upload_id parameter'}), 400
 
     dataset_info, auth_err = authorize_dataset_access(target_id, user_info)
-    if auth_err:
-        return auth_err[0], auth_err[1]
+    if auth_err or not dataset_info:
+        return auth_err[0] if auth_err else jsonify({'error': 'Forbidden'}), auth_err[1] if auth_err else 403
 
     user_email = user_info['email']
     csv_payload = generate_recommendations_csv(target_id, user_email=user_email)
@@ -2098,12 +2105,12 @@ def download_recommendations_pdf():
 @app.route('/api/datasets/<int:dataset_id>/activate', methods=['POST'])
 def activate_dataset_endpoint(dataset_id):
     user_info, err = require_authenticated_user()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     dataset_info, auth_err = authorize_dataset_access(dataset_id, user_info)
-    if auth_err:
-        return auth_err[0], auth_err[1]
+    if auth_err or not dataset_info:
+        return auth_err[0] if auth_err else jsonify({'error': 'Forbidden'}), auth_err[1] if auth_err else 403
 
     return jsonify({
         'message': f"Activated historical dataset: {dataset_info['name']}",
@@ -2113,8 +2120,8 @@ def activate_dataset_endpoint(dataset_id):
 @app.route('/api/products', methods=['GET', 'POST'])
 def manage_products():
     user_info, err = require_authenticated_user()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
     user_email = user_info['email']
 
     if request.method == 'GET':
@@ -2143,8 +2150,8 @@ def manage_products():
 @app.route('/api/products/<int:product_id>', methods=['DELETE'])
 def delete_product_endpoint(product_id):
     user_info, err = require_authenticated_user()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
     admin_err = _require_shop_admin(user_info)
     if admin_err:
         return admin_err
@@ -2155,8 +2162,8 @@ def delete_product_endpoint(product_id):
 @app.route('/api/trends', methods=['GET'])
 def get_trends():
     user_info, err = require_authenticated_user()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
     user_email = user_info['email']
 
     dataset_id = request.args.get('dataset_id')
@@ -2164,10 +2171,10 @@ def get_trends():
         return jsonify({'trends': []})
 
     dataset_info, auth_err = authorize_dataset_access(dataset_id, user_info)
-    if auth_err:
-        return auth_err[0], auth_err[1]
+    if auth_err or not dataset_info:
+        return auth_err[0] if auth_err else jsonify({'error': 'Forbidden'}), auth_err[1] if auth_err else 403
 
-    cache_key = (str(dataset_id), str(user_email))
+    cache_key = (str(dataset_id), user_email)
     cached = CACHE_TRENDS.get(cache_key)
     if cached and (time.time() - cached['time'] < 300):
         return jsonify(cached['data'])
@@ -2207,8 +2214,8 @@ def get_trends():
 @app.route('/api/benchmark', methods=['POST'])
 def run_benchmark():
     user_info, err = require_authenticated_user()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
     admin_err = _require_shop_admin(user_info)
     if admin_err:
         return admin_err
@@ -2224,8 +2231,8 @@ def run_benchmark():
             return jsonify({'error': 'No dataset available for benchmark. Please upload a dataset first.'}), 400
 
     dataset_info, auth_err = authorize_dataset_access(dataset_id, user_info)
-    if auth_err:
-        return auth_err[0], auth_err[1]
+    if auth_err or not dataset_info:
+        return auth_err[0] if auth_err else jsonify({'error': 'Forbidden'}), auth_err[1] if auth_err else 403
 
     transactions = db.get_transactions(user_email=user_email, dataset_id=dataset_id)
     if not transactions or len(transactions) < 5:
@@ -2254,7 +2261,7 @@ def run_benchmark():
         t0 = time.time()
         try:
             freq = apriori(df, min_support=min_support, use_colnames=True)
-            _ = association_rules(freq, metric="confidence", min_threshold=min_confidence)
+            _ = association_rules(pd.DataFrame(freq), metric="confidence", min_threshold=min_confidence)
         except Exception:
             pass
         t1 = time.time()
@@ -2270,7 +2277,7 @@ def run_benchmark():
         t0 = time.time()
         try:
             freq = fpgrowth(df, min_support=min_support, use_colnames=True)
-            _ = association_rules(freq, metric="confidence", min_threshold=min_confidence)
+            _ = association_rules(pd.DataFrame(freq), metric="confidence", min_threshold=min_confidence)
         except Exception:
             pass
         t1 = time.time()
@@ -2392,8 +2399,8 @@ def v1_generate_invitation():
     """
     user_info = get_current_user()
     err = _require_shop_admin(user_info)
-    if err:
-        return err
+    if err or not user_info:
+        return err if err else (jsonify({'error': 'Unauthorized'}), 401)
 
     store_id = _get_store_id_for_user(user_info)
     if not store_id:
@@ -2501,6 +2508,8 @@ def v1_consume_invitation():
 
     store        = db.get_store_by_id(store_id)
     updated_user = db.get_user(member_email)
+    if not updated_user:
+        updated_user = member_user
 
     # Mark related notification as read
     inv_id = inv.get('id')
@@ -2569,6 +2578,8 @@ def v1_accept_invitation_by_id(invitation_id):
 
     store        = db.get_store_by_id(store_id)
     updated_user = db.get_user(member_email)
+    if not updated_user:
+        return jsonify({'error': 'User account not found.'}), 404
 
     # Mark notification as read
     notifs = db.get_notifications_for_user(member_email, include_read=True)
@@ -2694,6 +2705,8 @@ def accept_invitation():
 
     store = db.get_store_by_id(store_id)
     updated_user = db.get_user(member_email)
+    if not updated_user:
+        return jsonify({'error': 'User account not found.'}), 404
     return jsonify({
         'message': 'Invitation accepted successfully. Your account is now active.',
         'token': f'mock-jwt-token-{member_email}',
@@ -2821,16 +2834,16 @@ def get_store_members():
 @app.route('/api/admin/dashboard-stats', methods=['GET'])
 def admin_dashboard_stats():
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
     stats = db.get_admin_dashboard_kpis()
     return jsonify(stats)
 
 @app.route('/api/admin/system-activity', methods=['GET'])
 def admin_system_activity():
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
     days = request.args.get('days', 30, type=int)
     activity_series = db.get_admin_system_activity_series(days=days)
     return jsonify({'series': activity_series})
@@ -2838,8 +2851,8 @@ def admin_system_activity():
 @app.route('/api/admin/businesses', methods=['GET', 'POST'])
 def admin_businesses():
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     if request.method == 'GET':
         search = request.args.get('search') or None
@@ -2907,8 +2920,8 @@ def admin_businesses():
 @app.route('/api/admin/businesses/<int:business_id>', methods=['GET', 'PUT', 'DELETE'])
 def admin_business_detail(business_id):
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     business = db.get_business_by_id(business_id)
     if not business:
@@ -2959,8 +2972,8 @@ def admin_business_detail(business_id):
 @app.route('/api/admin/businesses/<int:business_id>/approve', methods=['POST'])
 def admin_approve_business(business_id):
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     business = db.get_business_by_id(business_id)
     if not business:
@@ -2975,8 +2988,8 @@ def admin_approve_business(business_id):
 @app.route('/api/admin/businesses/<int:business_id>/reject', methods=['POST'])
 def admin_reject_business(business_id):
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     business = db.get_business_by_id(business_id)
     if not business:
@@ -2992,8 +3005,8 @@ def admin_reject_business(business_id):
 @app.route('/api/admin/businesses/<int:business_id>/status', methods=['PATCH'])
 def admin_update_business_status(business_id):
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     status = (request.json or {}).get('status')
     if not status or status not in ('Active', 'Inactive', 'Pending Approval', 'Rejected'):
@@ -3008,8 +3021,8 @@ def admin_update_business_status(business_id):
 @app.route('/api/admin/users', methods=['GET', 'POST'])
 def admin_users():
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     if request.method == 'GET':
         search = request.args.get('search') or None
@@ -3062,8 +3075,8 @@ def admin_users():
 @app.route('/api/admin/users/<path:email>', methods=['PUT', 'DELETE'])
 def admin_user_detail(email):
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     clean_email = email.strip().lower()
     target_user = db.get_user(clean_email)
@@ -3100,8 +3113,8 @@ def admin_user_detail(email):
 @app.route('/api/admin/users/<path:email>/status', methods=['PATCH'])
 def admin_user_status(email):
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     clean_email = email.strip().lower()
     status = (request.json or {}).get('status')
@@ -3116,8 +3129,8 @@ def admin_user_status(email):
 @app.route('/api/admin/users/<path:email>/reset-password', methods=['POST'])
 def admin_reset_user_password(email):
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     clean_email = email.strip().lower()
     new_password = (request.json or {}).get('new_password', '').strip()
@@ -3132,8 +3145,8 @@ def admin_reset_user_password(email):
 @app.route('/api/admin/datasets', methods=['GET'])
 def admin_datasets():
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     search = request.args.get('search') or None
     business_id = request.args.get('business_id') or None
@@ -3151,8 +3164,8 @@ def admin_datasets():
 @app.route('/api/admin/datasets/<int:dataset_id>', methods=['GET', 'DELETE'])
 def admin_dataset_detail(dataset_id):
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     ds = db.get_dataset_admin_details(dataset_id)
     if not ds:
@@ -3178,8 +3191,8 @@ def admin_dataset_detail(dataset_id):
 @app.route('/api/admin/analysis-history', methods=['GET'])
 def admin_analysis_history():
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     search = request.args.get('search') or None
     business_id = request.args.get('business_id') or None
@@ -3199,8 +3212,8 @@ def admin_analysis_history():
 @app.route('/api/admin/analysis-history/<int:analysis_id>', methods=['GET'])
 def admin_analysis_detail(analysis_id):
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     rec = db.get_analysis_record(analysis_id)
     if not rec:
@@ -3210,8 +3223,8 @@ def admin_analysis_detail(analysis_id):
 @app.route('/api/admin/evaluations/datasets', methods=['GET'])
 def admin_evaluations_datasets():
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     datasets = db.get_all_datasets_admin(limit=100)
     filtered = [
@@ -3231,8 +3244,8 @@ def admin_evaluations_datasets():
 @app.route('/api/admin/evaluations/benchmark', methods=['POST'])
 def admin_evaluations_benchmark():
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     data = request.json or {}
     dataset_id = data.get('dataset_id')
@@ -3312,7 +3325,7 @@ def admin_evaluations_benchmark():
                 fp_time = round(time.time() - t0_fp, 4)
                 _, fp_peak = tracemalloc.get_traced_memory()
                 tracemalloc.stop()
-                fp_rules = association_rules(fp_items, metric="confidence", min_threshold=min_confidence) if not fp_items.empty else pd.DataFrame()
+                fp_rules = association_rules(pd.DataFrame(fp_items), metric="confidence", min_threshold=min_confidence) if not fp_items.empty else pd.DataFrame()
             except Exception:
                 tracemalloc.stop()
                 fp_time = 0.0
@@ -3487,7 +3500,7 @@ def admin_evaluations_benchmark():
         fpgrowth_time = round(time.time() - t0_fpgrowth, 4)
         fpgrowth_current_mem, fpgrowth_peak_mem = tracemalloc.get_traced_memory()
         tracemalloc.stop()
-        fpgrowth_rules = association_rules(fpgrowth_itemsets, metric="confidence", min_threshold=min_confidence) if not fpgrowth_itemsets.empty else pd.DataFrame()
+        fpgrowth_rules = association_rules(pd.DataFrame(fpgrowth_itemsets), metric="confidence", min_threshold=min_confidence) if not fpgrowth_itemsets.empty else pd.DataFrame()
         fpgrowth_itemsets_count = len(fpgrowth_itemsets)
         fpgrowth_rules_count = len(fpgrowth_rules)
     except Exception as e:
@@ -3564,8 +3577,8 @@ def admin_evaluations_benchmark():
 @app.route('/api/admin/audit-logs', methods=['GET'])
 def admin_audit_logs():
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     search = request.args.get('search') or None
     user_filter = request.args.get('user') or None
@@ -3602,8 +3615,8 @@ def admin_audit_logs():
 @app.route('/api/admin/audit-logs/export', methods=['GET'])
 def admin_audit_logs_export():
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     logs, _ = db.get_all_audit_logs(limit=5000)
     
@@ -3631,8 +3644,8 @@ def admin_audit_logs_export():
 @app.route('/api/admin/settings', methods=['GET', 'PUT'])
 def admin_settings():
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     if request.method == 'GET':
         settings = db.get_system_settings()
@@ -3657,8 +3670,8 @@ def admin_settings():
 @app.route('/api/admin/profile', methods=['GET', 'PUT'])
 def admin_profile():
     user_info, err = require_system_admin()
-    if err:
-        return err[0], err[1]
+    if err or not user_info:
+        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
 
     if request.method == 'GET':
         return jsonify({'user': user_info})
@@ -3686,4 +3699,6 @@ def admin_profile():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000, threaded=True)
+    port = int(os.environ.get('PORT', 5000))
+    debug_mode = os.environ.get('FLASK_ENV', 'development') == 'development'
+    app.run(host='0.0.0.0', port=port, debug=debug_mode, threaded=True)

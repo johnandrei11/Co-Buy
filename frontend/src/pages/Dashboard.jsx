@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import axios from 'axios';
 import { jsPDF } from 'jspdf';
+import ExecutiveReportModal from '../components/dashboard/ExecutiveReportModal';
 import {
   BarChart3,
   FileText,
@@ -40,7 +41,7 @@ import {
   LabelList
 } from 'recharts';
 
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../config/api';
 
 const Dashboard = () => {
   const [stats, setStats] = useState({
@@ -64,6 +65,7 @@ const Dashboard = () => {
   // Modals state
   const [showDatasetModal, setShowDatasetModal] = useState(false);
   const [showHealthModal, setShowHealthModal] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [availableDatasets, setAvailableDatasets] = useState([]);
   const [loadingDatasets, setLoadingDatasets] = useState(false);
 
@@ -408,12 +410,13 @@ const Dashboard = () => {
       });
       const monthsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       const monthsLong = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-      return Array.from(map.entries()).map(([ym, val]) => {
+      return Array.from(map.entries()).map(([ym, val], idx) => {
         const parts = ym.split('-');
         const mIdx = parseInt(parts[1], 10) - 1;
         const disp = `${monthsShort[mIdx] || parts[1]} '${parts[0] ? parts[0].slice(-2) : ''}`;
         const full = `${monthsLong[mIdx] || parts[1]} ${parts[0]}`;
         return {
+          chartKey: ym || `m_${idx}`,
           date: ym,
           displayDate: disp,
           fullDate: full,
@@ -432,6 +435,7 @@ const Dashboard = () => {
         const dStart = slice[0].date;
         const dEnd = slice[slice.length - 1].date;
         weeks.push({
+          chartKey: dStart ? `${dStart}_w${i}` : `week_${i}`,
           date: dStart,
           displayDate: `${formatDateTick(dStart)} - ${formatDateTick(dEnd)}`,
           fullDate: `${formatFullDate(dStart)} – ${formatFullDate(dEnd)}`,
@@ -442,19 +446,29 @@ const Dashboard = () => {
       return weeks;
     }
 
-    // Default: Daily
-    return filteredTrends.map(t => {
+    // Default: Daily (use unique chartKey so duplicate 'displayDate' across multiple years don't cause Recharts activeDot snapping to the first year)
+    return filteredTrends.map((t, idx) => {
       const dateStr = t.date || '';
       const displayDate = t.display_date || formatDateTick(dateStr);
       const fullDate = t.full_date || formatFullDate(dateStr);
       return {
         ...t,
+        chartKey: dateStr ? `${dateStr}_${idx}` : `day_${idx}`,
         displayDate,
         fullDate,
         count: t.count || 0
       };
     });
   }, [filteredTrends, chartGranularity]);
+
+  // Fast mapping lookup for X-Axis tick label display
+  const chartKeyToDisplayMap = useMemo(() => {
+    const map = new Map();
+    chartData.forEach(item => {
+      map.set(item.chartKey, item.displayDate);
+    });
+    return map;
+  }, [chartData]);
 
   // Dynamic XAxis interval to avoid tick label collision
   const xAxisInterval = useMemo(() => {
@@ -712,12 +726,11 @@ const Dashboard = () => {
           <button
             type="button"
             className="cobuy-export-btn"
-            onClick={handleExportPDF}
-            disabled={isExporting}
-            title="Download PDF Market Insights report"
+            onClick={() => setShowExportModal(true)}
+            title="Open Executive Insights Report & Export"
           >
-            {isExporting ? <RefreshCw size={14} className="spin" /> : <Download size={15} />}
-            <span>{isExporting ? 'Generating...' : 'Export Report'}</span>
+            <Download size={15} />
+            <span>Export Report</span>
             <ChevronDown size={14} style={{ color: '#94a3b8' }} />
           </button>
         )}
@@ -1174,11 +1187,12 @@ const Dashboard = () => {
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? 'rgba(255, 255, 255, 0.08)' : '#e2e8f0'} strokeOpacity={0.8} />
                       <XAxis
-                        dataKey="displayDate"
+                        dataKey="chartKey"
                         axisLine={{ stroke: isDark ? '#334155' : '#cbd5e1' }}
                         tickLine={false}
                         tick={{ fill: isDark ? '#94a3b8' : '#64748b', fontSize: 11, fontWeight: 500 }}
                         interval={xAxisInterval}
+                        tickFormatter={(key) => chartKeyToDisplayMap.get(key) || key}
                         label={{
                           value: chartGranularity === 'monthly' ? 'Month' : chartGranularity === 'weekly' ? 'Week' : 'Transaction Date',
                           position: 'insideBottom',
@@ -1568,6 +1582,17 @@ const Dashboard = () => {
           </div>
         </div>
       )}
+
+      {/* ── Executive Insights Export Report Modal ── */}
+      <ExecutiveReportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        stats={stats}
+        rules={rules}
+        trends={trends}
+        datasetName={activeDatasetName}
+        dateRangeStr={formattedActiveDate}
+      />
     </div>
   );
 };

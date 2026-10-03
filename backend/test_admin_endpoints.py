@@ -138,6 +138,8 @@ class AdminEndpointsTestCase(unittest.TestCase):
 
         # Verify status is now Active
         updated_biz = db.get_business_by_id(biz_id)
+        self.assertIsNotNone(updated_biz)
+        assert updated_biz is not None
         self.assertEqual(updated_biz['status'], 'Active')
         self.assertEqual(updated_biz['approved_by'], self.sys_admin_email)
 
@@ -147,6 +149,8 @@ class AdminEndpointsTestCase(unittest.TestCase):
         }, headers=self.admin_headers)
         self.assertEqual(rej_res.status_code, 200)
         rejected_biz = db.get_business_by_id(biz_id)
+        self.assertIsNotNone(rejected_biz)
+        assert rejected_biz is not None
         self.assertEqual(rejected_biz['status'], 'Rejected')
         self.assertEqual(rejected_biz['rejection_reason'], 'Missing tax documents')
 
@@ -180,6 +184,8 @@ class AdminEndpointsTestCase(unittest.TestCase):
         self.assertEqual(update_res.status_code, 200)
 
         user = db.get_user(test_email)
+        self.assertIsNotNone(user)
+        assert user is not None
         self.assertEqual(user['name'], 'Manager Test Updated')
         self.assertEqual(user['role'], 'staff')
 
@@ -189,6 +195,8 @@ class AdminEndpointsTestCase(unittest.TestCase):
         }, headers=self.admin_headers)
         self.assertEqual(reset_res.status_code, 200)
         user_after = db.get_user(test_email)
+        self.assertIsNotNone(user_after)
+        assert user_after is not None
         self.assertEqual(user_after['password'], 'BrandNewPassword123')
 
         # Cleanup

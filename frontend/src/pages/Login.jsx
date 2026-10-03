@@ -3,8 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Eye, EyeOff, ShieldAlert, CheckCircle, ChevronDown, Store, Users, Clock, Copy, Check } from 'lucide-react';
 import axios from 'axios';
 import Logo from '../components/Logo';
-
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../config/api';
 
 // ── Pending Activation Overlay ────────────────────────────────────────────────
 export const PendingActivation = ({ onBackToLogin }) => (

@@ -19,8 +19,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { useAdminTheme } from '../../context/AdminThemeContext';
-
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../../config/api';
 
 export default function AdminEvaluations() {
   const { tokens, isDark } = useAdminTheme();

@@ -3,7 +3,7 @@ import os
 import datetime
 import json
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database.db')
+DB_PATH = os.environ.get('DATABASE_PATH') or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database.db')
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH, timeout=30.0)
@@ -481,7 +481,7 @@ def record_failed_login(email):
         conn.commit()
         conn.close()
         
-        remaining_seconds = int(duration_minutes * 60)
+        remaining_seconds = duration_minutes * 60
         return {
             'is_locked': True,
             'failed_attempts': failed_attempts,
@@ -1069,6 +1069,9 @@ def get_datasets(user_email=None):
         ''').fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+# Alias for backward compatibility
+get_user_datasets = get_datasets
 
 def get_datasets_by_store(store_id):
     conn = get_db_connection()

@@ -1,6 +1,5 @@
 import pandas as pd
 import io
-import datetime
 from datetime import datetime, timedelta, timezone
 import re
 
@@ -66,7 +65,7 @@ def standardize_date_string(val):
     # 5. Fallback via pandas to_datetime (handles textual months: 05-May-2026, etc.)
     try:
         dt = pd.to_datetime(sval, errors='coerce')
-        if pd.notna(dt):
+        if pd.notna(dt) and hasattr(dt, 'strftime'):
             return dt.strftime('%Y-%m-%d')
     except Exception:
         pass
@@ -157,7 +156,8 @@ def parse_df_to_transactions(df):
     has_id = any(any(k in c for k in ['id', 'invoice', 'order', 'receipt', 'trans', 'bill', 'txn']) for c in col_names_lower)
 
     if not has_id and len(df.columns) > 3:
-        first_col_is_num = pd.to_numeric(df.iloc[:, 0], errors='coerce').notna().mean() > 0.8
+        first_col_num = pd.to_numeric(df.iloc[:, 0], errors='coerce')
+        first_col_is_num = bool(pd.Series(first_col_num).notna().mean() > 0.8)
         if not first_col_is_num:
             transactions = []
             missing_removed = 0

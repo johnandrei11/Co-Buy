@@ -28,8 +28,7 @@ import {
   Legend
 } from 'recharts';
 import { useAdminTheme } from '../../context/AdminThemeContext';
-
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../../config/api';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();

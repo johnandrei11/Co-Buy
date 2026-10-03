@@ -10,8 +10,7 @@ import {
   Lock,
   RefreshCw
 } from 'lucide-react';
-
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../../config/api';
 
 export default function AdminProfile({ user, onUpdateUser }) {
   const [name, setName] = useState(user?.name || 'System Admin');
