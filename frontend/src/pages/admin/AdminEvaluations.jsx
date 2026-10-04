@@ -25,8 +25,8 @@ export default function AdminEvaluations() {
   const { tokens, isDark } = useAdminTheme();
   const [datasets, setDatasets] = useState([]);
   const [selectedDatasetId, setSelectedDatasetId] = useState('all');
-  const [minSupport, setMinSupport] = useState(0.01);
-  const [minConfidence, setMinConfidence] = useState(0.20);
+  const [minSupport, setMinSupport] = useState(0.05);
+  const [minConfidence, setMinConfidence] = useState(0.50);
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState(null);
   const [error, setError] = useState('');
@@ -40,7 +40,7 @@ export default function AdminEvaluations() {
         const list = res.data.datasets || [];
         setDatasets(list);
         // Automatically trigger benchmark on "all" (Overall Evaluation) by default
-        runBenchmarkForId('all', 0.01, 0.20);
+        runBenchmarkForId('all', 0.05, 0.50);
       } catch (err) {
         console.error('Failed to load evaluation datasets:', err);
       }
@@ -203,7 +203,7 @@ export default function AdminEvaluations() {
               min="0.001"
               max="1.0"
               value={minSupport}
-              onChange={(e) => setMinSupport(parseFloat(e.target.value) || 0.01)}
+              onChange={(e) => setMinSupport(parseFloat(e.target.value) || 0.05)}
               style={{
                 width: '100%',
                 padding: '0.5rem 0.75rem',
@@ -227,7 +227,7 @@ export default function AdminEvaluations() {
               min="0.01"
               max="1.0"
               value={minConfidence}
-              onChange={(e) => setMinConfidence(parseFloat(e.target.value) || 0.20)}
+              onChange={(e) => setMinConfidence(parseFloat(e.target.value) || 0.50)}
               style={{
                 width: '100%',
                 padding: '0.5rem 0.75rem',

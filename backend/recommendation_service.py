@@ -24,6 +24,7 @@ import db
 logger = logging.getLogger(__name__)
 
 MIN_TRANSACTIONS_THRESHOLD = 5
+MAX_RECOMMENDATIONS_PER_CATEGORY = 12
 
 def generate_recommendation_id(category: str, items: list) -> str:
     """Generate a stable, immutable unique hash for a recommendation."""
@@ -415,6 +416,9 @@ class RecommendationEngine:
 
     def load_data(self, date_range: str = 'all'):
         """Query Point-of-Sale / eCommerce order line items (Layer 1) with optional date filtering."""
+        if self.raw_transactions:
+            return
+
         txs_with_dates = db.get_transactions_with_dates(user_email=self.user_email, dataset_id=self.dataset_id)
         self.category_map = db.get_product_categories_for_dataset(dataset_id=self.dataset_id, user_email=self.user_email) or {}
 
@@ -489,7 +493,7 @@ class RecommendationEngine:
         period_b = self.raw_transactions[mid:]
         return period_a, period_b
 
-    def generate_recommendations(self, category_filter: str = 'ALL', date_range: str = 'all', search: str = '') -> dict:
+    def generate_recommendations(self, category_filter: str = 'ALL', date_range: str = 'all', search: str = '', max_per_category: int = MAX_RECOMMENDATIONS_PER_CATEGORY) -> dict:
         """
         Full 7-tier pipeline execution returning normalized payload.
         """
@@ -626,7 +630,7 @@ class RecommendationEngine:
 
             # Assign to strategic categories according to Spec Section 8
             # Priority 1: WATCH if velocity delta is statistically significant
-            if abs(vel) >= 0.15 and pkey not in used_pairs_per_cat['WATCH'] and len(categorized_buckets['WATCH']) < 6:
+            if abs(vel) >= 0.15 and pkey not in used_pairs_per_cat['WATCH'] and len(categorized_buckets['WATCH']) < max_per_category:
                 cand_copy = dict(cand)
                 cand_copy['category'] = 'WATCH'
                 cand_copy['insight_type'] = 'EMERGING_TREND' if vel > 0 else 'DECAYING_RELATIONSHIP'
@@ -634,7 +638,7 @@ class RecommendationEngine:
                 used_pairs_per_cat['WATCH'].add(pkey)
 
             # Priority 2: OPTIMIZE if cross-category synergy across disparate catalog sections
-            elif is_cross and lift >= 1.2 and pkey not in used_pairs_per_cat['OPTIMIZE'] and len(categorized_buckets['OPTIMIZE']) < 6:
+            elif is_cross and lift >= 1.2 and pkey not in used_pairs_per_cat['OPTIMIZE'] and len(categorized_buckets['OPTIMIZE']) < max_per_category:
                 cand_copy = dict(cand)
                 cand_copy['category'] = 'OPTIMIZE'
                 cand_copy['insight_type'] = 'MENU_RESTRUCTURING'
@@ -642,7 +646,7 @@ class RecommendationEngine:
                 used_pairs_per_cat['OPTIMIZE'].add(pkey)
 
             # Priority 3: GROW if high support & high lift (intentional bundling candidates)
-            elif supp >= 0.02 and lift >= 1.25 and pkey not in used_pairs_per_cat['GROW'] and len(categorized_buckets['GROW']) < 6:
+            elif supp >= 0.02 and lift >= 1.25 and pkey not in used_pairs_per_cat['GROW'] and len(categorized_buckets['GROW']) < max_per_category:
                 cand_copy = dict(cand)
                 cand_copy['category'] = 'GROW'
                 cand_copy['insight_type'] = 'BASKET_BUILDER'
@@ -650,7 +654,7 @@ class RecommendationEngine:
                 used_pairs_per_cat['GROW'].add(pkey)
 
             # Priority 4: SELL MORE if strong directional confidence
-            elif conf >= 0.35 and pkey not in used_pairs_per_cat['SELL_MORE'] and len(categorized_buckets['SELL_MORE']) < 6:
+            elif conf >= 0.35 and pkey not in used_pairs_per_cat['SELL_MORE'] and len(categorized_buckets['SELL_MORE']) < max_per_category:
                 cand_copy = dict(cand)
                 cand_copy['category'] = 'SELL_MORE'
                 cand_copy['insight_type'] = 'CHECKOUT_PROMPT'
@@ -658,7 +662,7 @@ class RecommendationEngine:
                 used_pairs_per_cat['SELL_MORE'].add(pkey)
 
             # Priority 5: REVIEW for high lift anomalies or low sample outliers
-            elif lift >= 2.0 and supp < 0.03 and pkey not in used_pairs_per_cat['REVIEW'] and len(categorized_buckets['REVIEW']) < 6:
+            elif lift >= 2.0 and supp < 0.03 and pkey not in used_pairs_per_cat['REVIEW'] and len(categorized_buckets['REVIEW']) < max_per_category:
                 cand_copy = dict(cand)
                 cand_copy['category'] = 'REVIEW'
                 cand_copy['insight_type'] = 'LOW_SAMPLE_OUTLIER'
@@ -675,7 +679,7 @@ class RecommendationEngine:
                 ('OPTIMIZE', 2, 'DISPLAY_ADJACENCY'),
                 ('REVIEW', 1, 'AFFINITY_BREAKDOWN')
             ]:
-                if len(categorized_buckets[cat]) < target_len and pkey not in used_pairs_per_cat[cat]:
+                if len(categorized_buckets[cat]) < min(target_len, max_per_category) and pkey not in used_pairs_per_cat[cat]:
                     cand_copy = dict(cand)
                     cand_copy['category'] = cat
                     cand_copy['insight_type'] = fallback_type

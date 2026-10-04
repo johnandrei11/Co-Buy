@@ -1436,6 +1436,7 @@ def get_recommendations_v2():
         sort_by = (body.get('sort_by') or request.args.get('sort_by') or 'volume').lower()
         page = int(body.get('page') or request.args.get('page', 1))
         page_size = int(body.get('page_size') or request.args.get('page_size', 10))
+        max_per_category = int(body.get('max_per_category') or request.args.get('max_per_category', 12))
     else:
         dataset_id = request.args.get('dataset_id')
         category = request.args.get('category', 'ALL')
@@ -1444,6 +1445,7 @@ def get_recommendations_v2():
         sort_by = (request.args.get('sort_by') or 'volume').lower()
         page = int(request.args.get('page', 1))
         page_size = int(request.args.get('page_size', 10))
+        max_per_category = int(request.args.get('max_per_category', 12))
 
     if not dataset_id:
         user_datasets = db.get_datasets(user_email=user_email)
@@ -1469,14 +1471,14 @@ def get_recommendations_v2():
         return auth_err[0] if auth_err else jsonify({'error': 'Forbidden'}), auth_err[1] if auth_err else 403
 
     force_refresh = request.args.get('refresh') == 'true' or request.args.get('nocache') == '1' or (request.is_json and request.json and (request.json.get('refresh') is True or request.json.get('nocache') is True))
-    cache_key = (str(dataset_id), str(user_email), str(category).upper(), str(date_range), str(search).strip().lower())
+    cache_key = (str(dataset_id), str(user_email), str(category).upper(), str(date_range), str(search).strip().lower(), max_per_category)
     cached = CACHE_RECOMMENDATIONS_V2.get(cache_key)
     if not force_refresh and cached and (time.time() - cached['time'] < 300):
         full_res = cached['data']
     else:
         try:
             engine = RecommendationEngine(user_email=user_email, dataset_id=int(dataset_id))
-            full_res = engine.generate_recommendations(category_filter=category, date_range=date_range, search=search)
+            full_res = engine.generate_recommendations(category_filter=category, date_range=date_range, search=search, max_per_category=max_per_category)
             CACHE_RECOMMENDATIONS_V2[cache_key] = {'time': time.time(), 'data': full_res}
         except Exception as e:
             logger.exception(f"Error computing v2 recommendations for dataset {dataset_id}: {e}")
@@ -3252,8 +3254,8 @@ def admin_evaluations_benchmark():
     if not dataset_id:
         return jsonify({'error': 'dataset_id is required'}), 400
 
-    min_support = float(data.get('min_support', 0.01))
-    min_confidence = float(data.get('min_confidence', 0.2))
+    min_support = float(data.get('min_support', 0.05))
+    min_confidence = float(data.get('min_confidence', 0.50))
 
     if str(dataset_id).lower() == 'all':
         conn = db.get_db_connection()

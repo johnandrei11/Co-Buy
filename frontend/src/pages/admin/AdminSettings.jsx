@@ -40,8 +40,8 @@ export default function AdminSettings() {
     },
     analysis: {
       default_algorithm: 'auto',
-      default_min_support: '0.01',
-      default_min_confidence: '0.20',
+      default_min_support: '0.05',
+      default_min_confidence: '0.50',
       default_min_lift: '1.0'
     },
     data: {

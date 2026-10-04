@@ -672,7 +672,7 @@ const BusinessRecommendations = ({
 
               {pageSizeDropdownOpen && (
                 <div className="cobuy-pagesize-dropdown-menu">
-                  {[2, 4, 6, 10].map((sz) => (
+                  {[2, 4, 6, 10, 12].map((sz) => (
                     <button
                       key={sz}
                       type="button"

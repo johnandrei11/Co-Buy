@@ -208,5 +208,21 @@ class RecommendationServiceTestCase(unittest.TestCase):
         self.assertEqual(data_30['analysis_period']['start'], 'Aug 06, 2026')
         self.assertEqual(data_30['analysis_period']['end'], 'Sep 05, 2026')
 
+    def test_max_per_category_parameter(self):
+        """Verify max_per_category parameter is accepted and bounds category items."""
+        engine = RecommendationEngine(user_email="test_service@cobuy.io", dataset_id=999)
+        engine.raw_transactions = [
+            ["Coffee", "Donut"], ["Coffee", "Donut"], ["Coffee", "Donut"],
+            ["Coffee", "Croissant"], ["Coffee", "Croissant"], ["Coffee", "Croissant"],
+            ["Tea", "Cookie"], ["Tea", "Cookie"], ["Tea", "Cookie"],
+            ["Tea", "Muffin"], ["Tea", "Muffin"], ["Tea", "Muffin"],
+            ["Espresso", "Scone"], ["Espresso", "Scone"], ["Espresso", "Scone"],
+        ]
+        res = engine.generate_recommendations(max_per_category=2)
+        self.assertFalse(res['is_insufficient_data'])
+        for cat in ['GROW', 'SELL_MORE', 'WATCH', 'OPTIMIZE', 'REVIEW']:
+            cat_items = [r for r in res['recommendations'] if r['category'] == cat]
+            self.assertLessEqual(len(cat_items), 2)
+
 if __name__ == '__main__':
     unittest.main()
