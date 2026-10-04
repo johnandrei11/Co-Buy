@@ -507,8 +507,8 @@ def init_db():
         cursor.execute("INSERT OR IGNORE INTO system_settings (key, value, category) VALUES (?, ?, ?)", (k, v, cat))
 
     # Migrate legacy defaults to standard documentation parameters
-    cursor.execute("UPDATE system_settings SET value = '0.05' WHERE key = 'default_min_support' AND value = '0.01'")
-    cursor.execute("UPDATE system_settings SET value = '0.50' WHERE key = 'default_min_confidence' AND value = '0.20'")
+    cursor.execute("UPDATE system_settings SET value = '0.05' WHERE key = 'default_min_support' AND (value = '0.01' OR value = '0.010')")
+    cursor.execute("UPDATE system_settings SET value = '0.50' WHERE key = 'default_min_confidence' AND (value = '0.20' OR value = '0.2')")
 
     # Seed reference businesses to match visual direction if needed
     ref_businesses = [
@@ -1867,6 +1867,15 @@ def get_system_settings():
         if cat not in result:
             result[cat] = {}
         result[cat][r['key']] = r['value']
+
+    # Ensure standard documentation parameters for analysis if still set to legacy defaults
+    if 'analysis' not in result:
+        result['analysis'] = {}
+    if result['analysis'].get('default_min_support') in ('0.01', '0.010', None):
+        result['analysis']['default_min_support'] = '0.05'
+    if result['analysis'].get('default_min_confidence') in ('0.20', '0.2', None):
+        result['analysis']['default_min_confidence'] = '0.50'
+
     return result
 
 get_all_businesses_admin = get_all_businesses

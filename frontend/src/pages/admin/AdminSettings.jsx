@@ -62,10 +62,18 @@ export default function AdminSettings() {
     try {
       const res = await axios.get(`${API_BASE}/admin/settings`);
       if (res.data.settings) {
+        const fetchedAnalysis = { ...(res.data.settings.analysis || {}) };
+        if (fetchedAnalysis.default_min_support === '0.01' || fetchedAnalysis.default_min_support === '0.010') {
+          fetchedAnalysis.default_min_support = '0.05';
+        }
+        if (fetchedAnalysis.default_min_confidence === '0.20' || fetchedAnalysis.default_min_confidence === '0.2') {
+          fetchedAnalysis.default_min_confidence = '0.50';
+        }
+
         setSettings(prev => ({
           general: { ...prev.general, ...(res.data.settings.general || {}) },
           appearance: { ...prev.appearance, ...(res.data.settings.appearance || { theme: currentTheme }) },
-          analysis: { ...prev.analysis, ...(res.data.settings.analysis || {}) },
+          analysis: { ...prev.analysis, ...fetchedAnalysis },
           data: { ...prev.data, ...(res.data.settings.data || {}) },
           security: { ...prev.security, ...(res.data.settings.security || {}) }
         }));
