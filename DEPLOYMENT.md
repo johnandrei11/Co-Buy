@@ -12,7 +12,21 @@ This guide walks you through deploying **CoBuy** with the **Frontend on Netlify*
 
 ---
 
-## Step 1: Deploy Backend to Render (Free)
+## Step 1: Set Up Free Cloud Database on Turso
+
+Because Render's free tier uses an ephemeral (temporary) disk that resets when the service sleeps, we use **Turso** (free cloud SQLite/libSQL) to persist users, datasets, and stores permanently.
+
+1. Go to [turso.tech](https://turso.tech) and sign up / log in with your GitHub account.
+2. In the Turso dashboard, click **Create Database**:
+   - **Database Name:** `cobuy-db` (or any name you prefer)
+   - Choose a region closest to your users.
+3. Click into your new database:
+   - Copy your **Database URL** (e.g. `libsql://cobuy-db-yourname.turso.io`).
+   - Click **Generate Token** and copy the **Auth Token**.
+
+---
+
+## Step 2: Deploy Backend to Render (Free)
 
 1. Sign up / Log in to [render.com](https://render.com).
 2. Click **New +** and select **Web Service**.
@@ -30,17 +44,14 @@ This guide walks you through deploying **CoBuy** with the **Frontend on Netlify*
    - `FLASK_ENV` = `production`
    - `PYTHON_VERSION` = `3.12.0`
    - `SECRET_KEY` = *(click "Generate" or type a random string)*
-6. **(Optional but recommended for SQLite persistence):**
-   - Under **Disks**, click **Add Disk**:
-     - Name: `cobuy-data`
-     - Mount Path: `/var/data`
-     - Size: `1 GB`
-   - Add environment variable: `DATABASE_PATH` = `/var/data/database.db`
-7. Click **Create Web Service**.
-8. Once deployment finishes, Render will provide your public backend URL, for example:
+   - `TURSO_DATABASE_URL` = *(paste your Turso Database URL from Step 1)*
+   - `TURSO_AUTH_TOKEN` = *(paste your Turso Auth Token from Step 1)*
+6. Click **Create Web Service** (or **Manual Deploy** if your service is already created).
+7. Once deployment finishes, Render will provide your public backend URL, for example:
    `https://cobuy-api.onrender.com`
 
-> **Note:** Test your backend in your browser by opening `https://cobuy-api.onrender.com/api/datasets`. If it responds with JSON, your backend is live!
+> **Note:** Test your backend in your browser by opening `https://cobuy-api.onrender.com/healthz`. If it responds with `{"status":"healthy"}`, your backend is live and connected to Turso!
+
 
 ---
 
