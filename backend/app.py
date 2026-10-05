@@ -39,25 +39,15 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'cobuy-secure-hmac-key-production-2026
 app.secret_key = SECRET_KEY
 CORS(app)
 
-_db_initialized = False
-_db_init_lock = threading.Lock()
+def _background_init():
+    try:
+        db.init_db()
+        logger.info("Database background initialization completed.")
+    except Exception as e:
+        logger.warning("Database background initialization notice: %s", e)
 
-def ensure_db_initialized():
-    global _db_initialized
-    if not _db_initialized:
-        with _db_init_lock:
-            if not _db_initialized:
-                try:
-                    db.init_db()
-                except Exception as e:
-                    logger.warning("Database init check notice: %s", e)
-                _db_initialized = True
-
-@app.before_request
-def before_request_hook():
-    if request.path in ('/healthz', '/'):
-        return
-    ensure_db_initialized()
+# Run schema validation in background so HTTP worker is never blocked on startup
+threading.Thread(target=_background_init, daemon=True).start()
 
 @app.route('/')
 @app.route('/healthz')
@@ -68,6 +58,26 @@ def health_check():
         'service': 'cobuy-backend',
         'database': 'turso' if turso_configured else 'local_sqlite'
     }), 200
+
+@app.route('/api/debug-db')
+def debug_db():
+    import time
+    t0 = time.time()
+    res = {'turso_configured': bool(os.environ.get('TURSO_DATABASE_URL'))}
+    try:
+        conn = db.get_db_connection()
+        res['connected_in_s'] = round(time.time() - t0, 3)
+        t1 = time.time()
+        user = db.get_user('janesmith@gmail.com')
+        res['queried_user_in_s'] = round(time.time() - t1, 3)
+        res['user_found'] = bool(user)
+        res['user_email'] = user.get('email') if user else None
+        res['status'] = 'healthy'
+    except Exception as e:
+        import traceback
+        res['error'] = str(e)
+        res['trace'] = traceback.format_exc()
+    return jsonify(res)
 
 # ── Cryptographic Token Generation & Verification ────────────────────────────
 

@@ -15,41 +15,17 @@ DB_PATH = os.environ.get('DATABASE_PATH') or os.path.join(os.path.dirname(os.pat
 TURSO_DATABASE_URL = os.environ.get('TURSO_DATABASE_URL')
 TURSO_AUTH_TOKEN = os.environ.get('TURSO_AUTH_TOKEN')
 
-class LibsqlRow:
+class LibsqlRow(dict):
     """Wrapper that provides sqlite3.Row-like behavior (column name, index, dict, iter) for libsql."""
     def __init__(self, description, values):
         self._keys = [col[0] for col in description] if description else []
         self._values = tuple(values)
-        self._dict = dict(zip(self._keys, self._values))
+        super().__init__(zip(self._keys, self._values))
 
     def __getitem__(self, item):
         if isinstance(item, int):
             return self._values[item]
-        return self._dict[item]
-
-    def get(self, key, default=None):
-        return self._dict.get(key, default)
-
-    def keys(self):
-        return self._dict.keys()
-
-    def values(self):
-        return self._dict.values()
-
-    def items(self):
-        return self._dict.items()
-
-    def __iter__(self):
-        return iter(self._dict)
-
-    def __contains__(self, key):
-        return key in self._dict
-
-    def __len__(self):
-        return len(self._dict)
-
-    def __repr__(self):
-        return repr(self._dict)
+        return super().__getitem__(item)
 
 def _handle_libsql_error(e):
     msg = str(e)
