@@ -44,7 +44,12 @@ db.init_db()
 @app.route('/')
 @app.route('/healthz')
 def health_check():
-    return jsonify({'status': 'healthy', 'service': 'cobuy-backend'}), 200
+    turso_configured = bool(os.environ.get('TURSO_DATABASE_URL'))
+    return jsonify({
+        'status': 'healthy',
+        'service': 'cobuy-backend',
+        'database': 'turso' if turso_configured else 'local_sqlite'
+    }), 200
 
 # ── Cryptographic Token Generation & Verification ────────────────────────────
 

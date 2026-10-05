@@ -142,8 +142,13 @@ class LibsqlConnectionWrapper:
 
 def get_db_connection():
     # If Turso Cloud credentials are provided, connect to Turso
-    turso_url = os.environ.get('TURSO_DATABASE_URL') or TURSO_DATABASE_URL
-    turso_token = os.environ.get('TURSO_AUTH_TOKEN') or TURSO_AUTH_TOKEN
+    raw_url = os.environ.get('TURSO_DATABASE_URL') or TURSO_DATABASE_URL or ''
+    turso_url = raw_url.strip().strip("'\"")
+    # Auto-correct common typo where letter 'i' was entered as number '1' ('l1bsql://')
+    if turso_url.startswith('l1bsql://'):
+        turso_url = 'libsql://' + turso_url[9:]
+    raw_token = os.environ.get('TURSO_AUTH_TOKEN') or TURSO_AUTH_TOKEN or ''
+    turso_token = raw_token.strip().strip("'\"")
     if turso_url and libsql:
         kwargs = {}
         if turso_token:
