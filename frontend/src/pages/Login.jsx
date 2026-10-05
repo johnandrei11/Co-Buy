@@ -342,6 +342,12 @@ const Login = ({ onLogin }) => {
       } else if (errData?.attempts_remaining !== undefined) {
         setAttemptsRemaining(errData.attempts_remaining);
         setError(errData.error || 'Incorrect password.');
+      } else if (!err.response) {
+        if (API_BASE.includes('localhost') && window.location.protocol === 'https:') {
+          setError('Backend URL not configured on Netlify. Please set VITE_API_BASE to your Render backend URL in Netlify settings.');
+        } else {
+          setError(`Cannot connect to backend (${API_BASE}). If hosted on Render free tier, it may be waking up from sleep (~50s). Please wait a moment and retry.`);
+        }
       } else {
         setError(errData?.error || 'Something went wrong. Please try again.');
       }

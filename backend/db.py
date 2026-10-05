@@ -5,7 +5,23 @@ import json
 import logging
 logger = logging.getLogger('cobuy_db')
 
-DB_PATH = os.environ.get('DATABASE_PATH') or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database.db')
+def resolve_db_path():
+    env_path = os.environ.get('DATABASE_PATH')
+    if env_path:
+        db_dir = os.path.dirname(env_path)
+        if db_dir:
+            try:
+                os.makedirs(db_dir, exist_ok=True)
+                test_file = os.path.join(db_dir, '.write_test')
+                with open(test_file, 'w') as f:
+                    f.write('1')
+                os.remove(test_file)
+                return env_path
+            except Exception as e:
+                logger.warning("DATABASE_PATH '%s' is not writable (%s). Using local database path.", env_path, e)
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database.db')
+
+DB_PATH = resolve_db_path()
 
 def get_db_connection():
     db_dir = os.path.dirname(DB_PATH)
