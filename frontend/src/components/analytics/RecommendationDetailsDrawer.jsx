@@ -1,54 +1,108 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import {
-  Leaf,
   X,
-  Lightbulb,
-  BarChart2,
-  Target,
-  Tag,
-  MapPin,
-  Zap,
-  TrendingUp,
-  ShieldCheck,
-  Layers,
-  Calendar
+  Link2,
+  FileText,
+  ExternalLink,
+  SquarePen
 } from 'lucide-react';
 
 const CATEGORY_MAP = {
   GROW: {
-    icon: Leaf,
     label: 'Grow • Bundle Opportunity',
-    bg: '#064E3B',
-    border: '#34D399',
-    color: '#34D399'
+    dotColor: '#10b981',
+    pillBg: 'rgba(16, 185, 129, 0.12)',
+    pillBorder: 'rgba(16, 185, 129, 0.35)',
+    pillColor: '#34d399'
   },
   SELL_MORE: {
-    icon: TrendingUp,
     label: 'Sell More • Cross-Selling',
-    bg: '#172554',
-    border: '#60A5FA',
-    color: '#60A5FA'
+    dotColor: '#3b82f6',
+    pillBg: 'rgba(59, 130, 246, 0.12)',
+    pillBorder: 'rgba(59, 130, 246, 0.35)',
+    pillColor: '#60a5fa'
   },
   WATCH: {
-    icon: Zap,
     label: 'Watch • Emerging Combos',
-    bg: '#3B0764',
-    border: '#C084FC',
-    color: '#C084FC'
+    dotColor: '#a855f7',
+    pillBg: 'rgba(168, 85, 247, 0.12)',
+    pillBorder: 'rgba(168, 85, 247, 0.35)',
+    pillColor: '#c084fc'
   },
   OPTIMIZE: {
-    icon: Target,
     label: 'Optimize • Product Placement',
-    bg: '#451A03',
-    border: '#FBBF24',
-    color: '#FBBF24'
+    dotColor: '#f59e0b',
+    pillBg: 'rgba(245, 158, 11, 0.12)',
+    pillBorder: 'rgba(245, 158, 11, 0.35)',
+    pillColor: '#fbbf24'
   },
   REVIEW: {
-    icon: Lightbulb,
     label: 'Review • Product Attention',
-    bg: '#4C0519',
-    border: '#F87171',
-    color: '#F87171'
+    dotColor: '#ef4444',
+    pillBg: 'rgba(239, 68, 68, 0.12)',
+    pillBorder: 'rgba(239, 68, 68, 0.35)',
+    pillColor: '#f87171'
+  }
+};
+
+/**
+ * Format a human-readable fraction from confidence (e.g. 33% -> "1 in 3")
+ */
+const getConfidenceFraction = (conf) => {
+  if (conf == null || isNaN(conf) || conf <= 0) return '1 in 3';
+  const val = conf > 1 ? conf / 100 : conf;
+  if (val >= 0.90) return '9 in 10';
+  if (val >= 0.75) return '4 in 5';
+  if (val >= 0.63) return '2 in 3';
+  if (val >= 0.45) return '1 in 2';
+  if (val >= 0.30) return '1 in 3';
+  if (val >= 0.22) return '1 in 4';
+  if (val >= 0.18) return '1 in 5';
+  if (val >= 0.12) return '1 in 7';
+  if (val >= 0.08) return '1 in 10';
+  const denom = Math.max(2, Math.round(1 / val));
+  return `1 in ${denom}`;
+};
+
+/**
+ * Format a human-readable fraction from support (e.g. 5.8% -> "1 in 17")
+ */
+const getSupportFraction = (supp) => {
+  if (supp == null || isNaN(supp) || supp <= 0) return '1 in 17';
+  const val = supp > 1 ? supp / 100 : supp;
+  const denom = Math.max(2, Math.round(1 / val));
+  return `1 in ${denom}`;
+};
+
+/**
+ * Extract a concise product anchor keyword for the habit metric (e.g. "Flavored Fries" -> "Fries")
+ */
+const getShortAnchorName = (name) => {
+  if (!name) return 'Fries';
+  const clean = name.replace(/\s*\(.*?\)\s*/g, '').trim();
+  const words = clean.split(' ').filter(Boolean);
+  if (words.length > 1 && words[0].toLowerCase() === 'flavored') {
+    return words.slice(1).join(' ');
+  }
+  if (clean.length <= 15) return clean;
+  return words.slice(0, 2).join(' ');
+};
+
+/**
+ * Format timestamp into clean date string (e.g. "Feb 01, 2026")
+ */
+const formatDate = (dateVal) => {
+  if (!dateVal) return 'Feb 01, 2026';
+  try {
+    const d = new Date(dateVal);
+    if (isNaN(d.getTime())) return dateVal;
+    return d.toLocaleDateString('en-US', {
+      month: 'short',
+      day: '2-digit',
+      year: 'numeric'
+    });
+  } catch {
+    return dateVal;
   }
 };
 
@@ -58,9 +112,6 @@ const RecommendationDetailsDrawer = ({
   isOpen,
   onClose
 }) => {
-  const [activeTab, setActiveTab] = useState('advisory');
-
-  // Support both 'item' and 'recommendation' props
   const data = item || recommendation;
 
   // Escape key handler
@@ -89,9 +140,8 @@ const RecommendationDetailsDrawer = ({
   if (!isOpen || !data) return null;
 
   // ── 1. Category & Header Meta ──
-  const rawCategory = data.category || 'GROW';
-  const categoryConfig = CATEGORY_MAP[rawCategory.toUpperCase()] || CATEGORY_MAP.GROW;
-  const CategoryIcon = categoryConfig.icon;
+  const rawCategory = (data.category || 'GROW').toUpperCase();
+  const categoryConfig = CATEGORY_MAP[rawCategory] || CATEGORY_MAP.GROW;
 
   const categoryPillLabel = data.type
     ? `${data.category || 'Grow'} • ${data.type}`
@@ -106,305 +156,187 @@ const RecommendationDetailsDrawer = ({
 
   // Timestamp
   const analysisPeriod = data.analysisPeriod || {};
-  const timestampText = data.generatedAt
-    ? `Generated on Auto-Run • ${data.generatedAt}`
-    : analysisPeriod.end
-    ? `Generated on Auto-Run • ${analysisPeriod.end}`
-    : 'Generated on Auto-Run • Sep 18, 2026';
+  const rawDate = data.generatedAt || analysisPeriod.end || new Date().toISOString();
+  const dateText = formatDate(rawDate);
 
-  // ── 2. Business Context (Why CoBuy Created This) ──
+  // Subtitle / Plain-Language Summary
+  const subtitleText = data.summary || data.context || 'Customers often buy these together.';
+
+  // ── 2. Observed Purchasing Dynamics (KPIs) ──
   const details = data.details || {};
-  const explanation = data.explanation || details.rationale || data.summary ||
-    "It's a classic on-the-go combo pair that naturally boosts average order value without adding customer decision friction.";
-
-  // ── 3. Observed Purchasing Dynamics (KPIs) ──
-  const metrics = data.metrics || {};
   const supporting = details.supportingData || {};
+  const metrics = data.metrics || {};
 
-  // KPI 1: Volume
-  const rawTxCount = metrics.coTransactions ?? supporting.transactionCount ?? 56;
+  // KPI 1: Total Co-Transactions
+  const rawTxCount = metrics.coTransactions ?? supporting.transactionCount ?? 259;
   const volumeValue = typeof rawTxCount === 'number' ? rawTxCount.toLocaleString() : rawTxCount;
 
-  // KPI 2: Share of Total Baskets
-  const basketShare = metrics.basketShare ??
-    (supporting.supportPct != null ? `${supporting.supportPct}%` : '3.5%');
+  // KPI 2: Overall Basket Ratio (Support)
+  const rawSupport = supporting.supportPct ?? (metrics.support != null ? metrics.support * 100 : 5.8);
+  const supportFraction = getSupportFraction(rawSupport);
 
-  // KPI 3: Conversion / Cross-Sell Ratio (Humanized to avoid confusing "~1 in 1")
-  const confidence = supporting.confidencePct ?? metrics.confidence;
-  const formatConversionRatio = (conf) => {
-    if (conf == null || isNaN(conf) || conf <= 0) return '~1 in 10';
-    const c = Math.round(conf);
-    if (c >= 95) return '100%';
-    if (c >= 85) return '~9 in 10';
-    if (c >= 75) return '~4 in 5';
-    if (c >= 63) return '~2 in 3';
-    if (c >= 45) return '~1 in 2';
-    if (c >= 30) return '~1 in 3';
-    if (c >= 22) return '~1 in 4';
-    if (c >= 18) return '~1 in 5';
-    if (c >= 12) return '~1 in 7';
-    if (c >= 8) return '~1 in 10';
-    if (c >= 4) return '~1 in 20';
-    const denom = Math.max(2, Math.round(100 / Math.max(c, 1)));
-    return `~1 in ${denom}`;
-  };
+  // Hero: Confidence / Top Habit Metric
+  const rawConfidence = supporting.confidencePct ?? (metrics.confidence != null ? metrics.confidence * 100 : 33.3);
+  const confidenceFraction = getConfidenceFraction(rawConfidence);
+  const anchorShortName = getShortAnchorName(p1);
+  const liftRatio = supporting.liftRatio ?? (metrics.lift != null ? Number(metrics.lift).toFixed(1) : '2.8');
 
-  const rawRatio = metrics.crossSellRatio ?? supporting.crossSellRatio;
-  // If rawRatio happens to be "~1 in 1" or "1 in 1", normalize it
-  const crossSellRatio = (rawRatio && rawRatio !== '~1 in 1' && rawRatio !== '1 in 1')
-    ? rawRatio
-    : formatConversionRatio(confidence);
-
-  // Tailored Ratio Label
-  const anchorName = p1 || 'Brownie';
-  const targetName = p2 || 'Croissant';
-  const ratioLabel = `Orders with ${anchorName} include ${targetName}`;
-
-  // ── 4. Action Considerations ──
+  // ── 3. Action Considerations ──
   const customActions = data.actions || [];
   const considerations = details.considerations || [];
 
   const actionA = customActions[0] || {
-    badge: 'PRICING TEST',
-    headline: 'Test a bundled price point',
-    description: considerations[0] || 'Offer a 5–8% overall discount on the combined pair to encourage impulse add-ons at POS.'
+    badge: 'Pricing Test',
+    headline: 'CREATE BUNDLED PRICE',
+    description: considerations[0] || 'Offer a lower price when bought together.'
   };
 
   const actionB = customActions[1] || {
-    badge: 'POS MERCHANDISING',
-    headline: 'Primary promotional placement',
-    description: considerations[1] || `Feature ${derivedTitle} together as a recommended pair on digital checkout screens.`
+    badge: 'POS Merchandising',
+    headline: 'RUN IN-STORE PROMOS',
+    description: considerations[1] || 'Promote on screens and menu boards.'
   };
 
   return (
-    <div className="cobuy-view-details-overlay" onClick={onClose}>
+    <div className="cobuy-bop-overlay" onClick={onClose}>
       <div
-        className="cobuy-view-details-modal"
+        className="cobuy-bop-modal"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="view-details-modal-title"
+        aria-labelledby="cobuy-bop-title"
       >
-        {/* ── Section 1: Modal Header Row ── */}
-        <div className="cobuy-vdm-header">
-          <div className="cobuy-vdm-header-left">
-            <div
-              className="cobuy-vdm-category-pill"
+        {/* ── Top Header Row: Category Badge & Date + Close ── */}
+        <div className="cobuy-bop-header-row">
+          <div
+            className="cobuy-bop-pill"
+            style={{
+              background: categoryConfig.pillBg,
+              borderColor: categoryConfig.pillBorder,
+              color: categoryConfig.pillColor
+            }}
+          >
+            <span
+              className="cobuy-bop-dot"
               style={{
-                background: categoryConfig.bg,
-                borderColor: categoryConfig.border,
-                color: categoryConfig.color
+                background: categoryConfig.dotColor,
+                boxShadow: `0 0 6px ${categoryConfig.dotColor}`
               }}
+            />
+            <span>{categoryPillLabel}</span>
+          </div>
+
+          <div className="cobuy-bop-header-right">
+            <span className="cobuy-bop-date">{dateText}</span>
+            <button
+              type="button"
+              className="cobuy-bop-close-btn"
+              onClick={onClose}
+              aria-label="Close modal"
+              title="Close (Esc)"
             >
-              <CategoryIcon size={13} style={{ color: categoryConfig.color }} />
-              <span>{categoryPillLabel}</span>
-            </div>
-
-            <h2 id="view-details-modal-title" className="cobuy-vdm-title">
-              {modalTitle}
-            </h2>
-
-            <p className="cobuy-vdm-timestamp">
-              {timestampText}
-            </p>
+              <X size={16} />
+            </button>
           </div>
-
-          <button
-            type="button"
-            className="cobuy-vdm-close-btn"
-            onClick={onClose}
-            aria-label="Close modal"
-            title="Close (Esc)"
-          >
-            <X size={16} />
-          </button>
         </div>
 
-        {/* ── Section 2: Tab Bar ── */}
-        <div className="cobuy-vdm-tab-bar">
-          <button
-            type="button"
-            className={`cobuy-vdm-tab-btn ${activeTab === 'advisory' ? 'is-active' : ''}`}
-            onClick={() => setActiveTab('advisory')}
-          >
-            Business Advisory
-          </button>
-          <button
-            type="button"
-            className={`cobuy-vdm-tab-btn ${activeTab === 'analytics' ? 'is-active' : ''}`}
-            onClick={() => setActiveTab('analytics')}
-          >
-            Supporting Analytics
-          </button>
+        {/* ── Headline & Plain-Language Summary ── */}
+        <h2 id="cobuy-bop-title" className="cobuy-bop-title">
+          {modalTitle}
+        </h2>
+
+        <p className="cobuy-bop-subtitle">
+          {subtitleText}
+        </p>
+
+        {/* ── Hero Insight Card (Top Metric - Amber Highlight) ── */}
+        <div
+          className="cobuy-bop-hero-card"
+          title={`Confidence: ${rawConfidence}% | Lift Ratio: ${liftRatio}x`}
+        >
+          <span className="cobuy-bop-hero-highlight">{confidenceFraction}</span>
+          <span className="cobuy-bop-hero-text"> of {anchorShortName} orders also bought this</span>
         </div>
 
-        {/* ── Modal Body: Business Advisory Tab (Expected Visual Output) ── */}
-        {activeTab === 'advisory' ? (
-          <div className="cobuy-vdm-body">
-            {/* Section 2 Callout: Why CoBuy Created This */}
-            <div className="cobuy-vdm-section">
-              <div className="cobuy-vdm-section-title cobuy-vdm-section-title--cyan">
-                <Lightbulb size={14} className="cobuy-vdm-sec-icon" />
-                <span>WHY COBUY CREATED THIS</span>
-              </div>
-              <div className="cobuy-vdm-inset-box">
-                <p className="cobuy-vdm-rationale-text">
-                  {explanation}
-                </p>
-              </div>
-            </div>
-
-            {/* Section 3: Observed Purchasing Dynamics (3-Card Horizontal KPI Grid) */}
-            <div className="cobuy-vdm-section">
-              <div className="cobuy-vdm-section-title cobuy-vdm-section-title--cyan">
-                <BarChart2 size={14} className="cobuy-vdm-sec-icon" />
-                <span>OBSERVED PURCHASING DYNAMICS</span>
-              </div>
-              <div className="cobuy-vdm-kpi-grid">
-                {/* KPI Card 1: Volume */}
-                <div className="cobuy-vdm-kpi-card">
-                  <div className="cobuy-vdm-kpi-val cobuy-vdm-kpi-val--white">
-                    {volumeValue}
-                  </div>
-                  <div className="cobuy-vdm-kpi-label">
-                    Total Co-Transactions
-                  </div>
-                </div>
-
-                {/* KPI Card 2: Basket Share */}
-                <div className="cobuy-vdm-kpi-card">
-                  <div className="cobuy-vdm-kpi-val cobuy-vdm-kpi-val--green">
-                    {basketShare}
-                  </div>
-                  <div className="cobuy-vdm-kpi-label">
-                    Share of Total Baskets
-                  </div>
-                </div>
-
-                {/* KPI Card 3: Conversion Ratio */}
-                <div
-                  className="cobuy-vdm-kpi-card"
-                  title={`Confidence: ${supporting.confidencePct ?? 0}% attachment rate`}
-                >
-                  <div className="cobuy-vdm-kpi-val cobuy-vdm-kpi-val--cyan">
-                    {crossSellRatio}
-                  </div>
-                  <div className="cobuy-vdm-kpi-label">
-                    {ratioLabel}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Section 4: Action Considerations (Stacked Cards) */}
-            <div className="cobuy-vdm-section">
-              <div className="cobuy-vdm-section-title cobuy-vdm-section-title--green">
-                <Target size={14} className="cobuy-vdm-sec-icon" />
-                <span>ACTION CONSIDERATIONS</span>
-              </div>
-
-              <div className="cobuy-vdm-actions-stack">
-                {/* Action Card A */}
-                <div className="cobuy-vdm-action-card">
-                  <div className="cobuy-vdm-action-top">
-                    <span className="cobuy-vdm-action-badge">
-                      <Tag size={12} />
-                      <span>{actionA.type || actionA.badge || 'PRICING TEST'}</span>
-                    </span>
-                    <h4 className="cobuy-vdm-action-headline">
-                      {actionA.headline}
-                    </h4>
-                  </div>
-                  <p className="cobuy-vdm-action-desc">
-                    {actionA.description}
-                  </p>
-                </div>
-
-                {/* Action Card B */}
-                <div className="cobuy-vdm-action-card">
-                  <div className="cobuy-vdm-action-top">
-                    <span className="cobuy-vdm-action-badge">
-                      <MapPin size={12} />
-                      <span>{actionB.type || actionB.badge || 'POS MERCHANDISING'}</span>
-                    </span>
-                    <h4 className="cobuy-vdm-action-headline">
-                      {actionB.headline}
-                    </h4>
-                  </div>
-                  <p className="cobuy-vdm-action-desc">
-                    {actionB.description}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* ── Supporting Analytics Tab Content ── */
-          <div className="cobuy-vdm-body">
-            <div className="cobuy-vdm-section">
-              <div className="cobuy-vdm-section-title cobuy-vdm-section-title--cyan">
-                <ShieldCheck size={14} className="cobuy-vdm-sec-icon" />
-                <span>MATHEMATICAL ASSOCIATION PARAMETERS</span>
-              </div>
-              <div className="cobuy-vdm-kpi-grid">
-                <div className="cobuy-vdm-kpi-card">
-                  <div className="cobuy-vdm-kpi-val cobuy-vdm-kpi-val--white">
-                    {supporting.supportPct || '0.0'}%
-                  </div>
-                  <div className="cobuy-vdm-kpi-label">Support Ratio</div>
-                </div>
-                <div className="cobuy-vdm-kpi-card">
-                  <div className="cobuy-vdm-kpi-val cobuy-vdm-kpi-val--cyan">
-                    {supporting.confidencePct || '0.0'}%
-                  </div>
-                  <div className="cobuy-vdm-kpi-label">Confidence</div>
-                </div>
-                <div className="cobuy-vdm-kpi-card">
-                  <div className="cobuy-vdm-kpi-val cobuy-vdm-kpi-val--green">
-                    {supporting.liftRatio || '1.0'}x
-                  </div>
-                  <div className="cobuy-vdm-kpi-label">Lift Ratio</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="cobuy-vdm-section">
-              <div className="cobuy-vdm-section-title cobuy-vdm-section-title--green">
-                <Layers size={14} className="cobuy-vdm-sec-icon" />
-                <span>ALGORITHMIC EXECUTION SUMMARY</span>
-              </div>
-              <div className="cobuy-vdm-inset-box">
-                <div className="cobuy-vdm-stat-row">
-                  <span className="cobuy-vdm-stat-k">Analytical Trigger</span>
-                  <span className="cobuy-vdm-stat-v">{data.insightType || 'BASKET_BUILDER'}</span>
-                </div>
-                <div className="cobuy-vdm-stat-row">
-                  <span className="cobuy-vdm-stat-k">Classification Tier</span>
-                  <span className="cobuy-vdm-stat-v">{rawCategory} Strategic Bucket</span>
-                </div>
-                <div className="cobuy-vdm-stat-row">
-                  <span className="cobuy-vdm-stat-k">Analysis Window</span>
-                  <span className="cobuy-vdm-stat-v">{analysisPeriod.start || 'N/A'} – {analysisPeriod.end || 'N/A'}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Section 4: Modal Footer ── */}
-        <div className="cobuy-vdm-footer">
-          <div className="cobuy-vdm-footer-brand">
-            <Zap size={14} className="cobuy-vdm-zap-icon" />
-            <span>CoBuy Business Advisory Engine</span>
-          </div>
-
-          <button
-            type="button"
-            className="cobuy-vdm-done-btn"
-            onClick={onClose}
+        {/* ── Secondary Metrics Stack ── */}
+        <div className="cobuy-bop-metrics-stack">
+          {/* Metric 1: Co-Transactions */}
+          <div
+            className="cobuy-bop-metric-card"
+            title={`Total co-transactions in dataset: ${volumeValue}`}
           >
-            Close Details
-          </button>
+            <span className="cobuy-bop-metric-num cobuy-bop-metric-num--blue">
+              {volumeValue}
+            </span>
+            <div className="cobuy-bop-metric-meta">
+              <span className="cobuy-bop-metric-label">Total Co-Transactions</span>
+              <span className="cobuy-bop-metric-sub">Transactions</span>
+            </div>
+          </div>
+
+          {/* Metric 2: All Orders Frequency */}
+          <div
+            className="cobuy-bop-metric-card"
+            title={`Support: ${rawSupport}% of all store transactions`}
+          >
+            <span className="cobuy-bop-metric-num cobuy-bop-metric-num--green">
+              {supportFraction}
+            </span>
+            <span className="cobuy-bop-metric-label cobuy-bop-metric-label--green">
+              Included in all orders
+            </span>
+          </div>
+        </div>
+
+        {/* ── Action Considerations Section ── */}
+        <div className="cobuy-bop-actions-section">
+          <h3 className="cobuy-bop-actions-title">Action Considerations</h3>
+
+          <div className="cobuy-bop-actions-stack">
+            {/* Action Card 1: Pricing Test */}
+            <div className="cobuy-bop-action-card">
+              <div className="cobuy-bop-action-top">
+                <div className="cobuy-bop-action-badge-group">
+                  <div className="cobuy-bop-action-icon cobuy-bop-action-icon--blue">
+                    <Link2 size={13} />
+                  </div>
+                  <span className="cobuy-bop-action-badge cobuy-bop-action-badge--blue">
+                    {actionA.badge || 'Pricing Test'}
+                  </span>
+                </div>
+                <ExternalLink size={14} className="cobuy-bop-action-ext-icon" />
+              </div>
+
+              <h4 className="cobuy-bop-action-headline">
+                {(actionA.headline || 'CREATE BUNDLED PRICE').toUpperCase()}
+              </h4>
+              <p className="cobuy-bop-action-desc">
+                {actionA.description}
+              </p>
+            </div>
+
+            {/* Action Card 2: POS Merchandising */}
+            <div className="cobuy-bop-action-card">
+              <div className="cobuy-bop-action-top">
+                <div className="cobuy-bop-action-badge-group">
+                  <div className="cobuy-bop-action-icon cobuy-bop-action-icon--green">
+                    <FileText size={13} />
+                  </div>
+                  <span className="cobuy-bop-action-badge cobuy-bop-action-badge--green">
+                    {actionB.badge || 'POS Merchandising'}
+                  </span>
+                </div>
+                <SquarePen size={14} className="cobuy-bop-action-ext-icon" />
+              </div>
+
+              <h4 className="cobuy-bop-action-headline">
+                {(actionB.headline || 'RUN IN-STORE PROMOS').toUpperCase()}
+              </h4>
+              <p className="cobuy-bop-action-desc">
+                {actionB.description}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

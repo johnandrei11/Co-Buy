@@ -61,18 +61,11 @@ const DATE_RANGES = [
   { label: 'All time', value: 'all' }
 ];
 
-const SORT_OPTIONS = [
-  { label: 'Volume', value: 'volume' },
-  { label: 'Lift', value: 'lift' },
-  { label: 'Confidence', value: 'confidence' }
-];
-
 const BusinessRecommendations = ({
   datasetId
 }) => {
   const toolbarRef = useRef(null);
   const dateDropdownRef = useRef(null);
-  const sortDropdownRef = useRef(null);
   const pageSizeDropdownRef = useRef(null);
 
   const [activeCategory, setActiveCategory] = useState('GROW');
@@ -89,7 +82,6 @@ const BusinessRecommendations = ({
   const [selectedRecommendation, setSelectedRecommendation] = useState(null);
 
   const [dateDropdownOpen, setDateDropdownOpen] = useState(false);
-  const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   const [pageSizeDropdownOpen, setPageSizeDropdownOpen] = useState(false);
 
   // Close dropdowns on click outside
@@ -97,9 +89,6 @@ const BusinessRecommendations = ({
     const handleDocumentClick = (e) => {
       if (dateDropdownRef.current && !dateDropdownRef.current.contains(e.target)) {
         setDateDropdownOpen(false);
-      }
-      if (sortDropdownRef.current && !sortDropdownRef.current.contains(e.target)) {
-        setSortDropdownOpen(false);
       }
       if (pageSizeDropdownRef.current && !pageSizeDropdownRef.current.contains(e.target)) {
         setPageSizeDropdownOpen(false);
@@ -375,12 +364,6 @@ const BusinessRecommendations = ({
     setCurrentPage(1);
   };
 
-  const handleSortChange = (val) => {
-    setSortBy(val);
-    setSortDropdownOpen(false);
-    setCurrentPage(1);
-  };
-
   const handlePageSizeChange = (newSize) => {
     setPageSize(newSize);
     setPageSizeDropdownOpen(false);
@@ -429,7 +412,6 @@ const BusinessRecommendations = ({
   }, [currentPage, pagination.total_pages]);
 
   const selectedDateLabel = DATE_RANGES.find(d => d.value === dateRange)?.label || 'Last 30 days';
-  const selectedSortLabel = SORT_OPTIONS.find(s => s.value === sortBy)?.label || 'Volume';
 
   return (
     <div className="cobuy-business-recommendations-root">
@@ -531,34 +513,6 @@ const BusinessRecommendations = ({
 
         {/* Secondary Actions on far right */}
         <div className="cobuy-rec-toolbar-actions">
-          {/* Sort By Dropdown */}
-          <div className="cobuy-sort-dropdown-wrapper" ref={sortDropdownRef}>
-            <button
-              type="button"
-              className="cobuy-sort-dropdown-trigger"
-              onClick={() => setSortDropdownOpen(prev => !prev)}
-              title="Sort recommendations"
-            >
-              <span>Sort: {selectedSortLabel}</span>
-              <ChevronDown size={14} />
-            </button>
-
-            {sortDropdownOpen && (
-              <div className="cobuy-sort-dropdown-menu">
-                {SORT_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    className={`cobuy-sort-dropdown-item ${sortBy === opt.value ? 'is-selected' : ''}`}
-                    onClick={() => handleSortChange(opt.value)}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
           {/* Export Action Button */}
           <button
             type="button"

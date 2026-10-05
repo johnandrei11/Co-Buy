@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Filter, Search, X, ChevronDown, ChevronUp, Check, RotateCcw, Info } from 'lucide-react';
+import { Filter, Search, X, ChevronDown, ChevronUp, Check, RotateCcw } from 'lucide-react';
 
 /**
  * CategoryFilterBar
@@ -264,16 +264,8 @@ const CategoryFilterBar = ({
           </div>
         </div>
 
-        {/* Right: Informative Scoped Badge & Reset Button */}
+        {/* Right: Reset Button */}
         <div className="cobuy-cat-filter-actions">
-          <div
-            className="cobuy-cat-scope-tag"
-            title="Scoped filter: Applies to Customers' Carts, Top Sellers, Recommendations antecedents, and Combos primary product. Frequently Bought Together remains cross-category."
-          >
-            <Info size={13} style={{ flexShrink: 0 }} />
-            <span>Scoped View</span>
-          </div>
-
           {!isAllSelected && (
             <button
               type="button"
