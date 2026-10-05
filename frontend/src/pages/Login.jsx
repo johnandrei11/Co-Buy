@@ -255,9 +255,21 @@ const Login = ({ onLogin }) => {
   };
 
   const validateForm = () => {
-    if (!email || !email.includes('@')) {
-      setError('Please enter a valid email address.');
+    const raw = (email || '').trim().toLowerCase();
+    if (!raw) {
+      setError('Please enter your email or username.');
       return false;
+    }
+    if (isRegister) {
+      if (!raw.includes('@')) {
+        setError('Please enter a valid email address.');
+        return false;
+      }
+    } else {
+      if (!raw.includes('@') && raw !== 'admin' && raw !== 'janesmith') {
+        setError('Please enter a valid email address.');
+        return false;
+      }
     }
     if (!password || password.length < 6) {
       setError('Password must be at least 6 characters.');
@@ -300,7 +312,12 @@ const Login = ({ onLogin }) => {
           onLogin(response.data.token, response.data.user);
         }, 1200);
       } else {
-        const response = await axios.post(`${API_BASE}/login`, { email, password });
+        const loginEmail = email.trim().toLowerCase() === 'admin'
+          ? 'admin@ruleminer.ai'
+          : email.trim().toLowerCase() === 'janesmith'
+            ? 'janesmith@gmail.com'
+            : email.trim();
+        const response = await axios.post(`${API_BASE}/login`, { email: loginEmail, password });
         if (response.data.user?.business_status === 'Pending Approval' && response.data.user?.role !== 'system_admin') {
           setPendingApproval({
             message: 'Your business registration is currently under review by the System Administrator. Once approved, you will have full access to your business analytics workspace.',
@@ -707,10 +724,10 @@ const Login = ({ onLogin }) => {
             </AnimatePresence>
 
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="label">Email Address</label>
+              <label className="label">{isRegister ? 'Email Address' : 'Email Address or Username'}</label>
               <input
-                type="email"
-                placeholder="you@example.com"
+                type={isRegister ? "email" : "text"}
+                placeholder={isRegister ? "you@example.com" : "email or username (e.g. admin)"}
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);

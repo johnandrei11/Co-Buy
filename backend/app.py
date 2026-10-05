@@ -680,6 +680,12 @@ def login():
         if not email or not password:
             return jsonify({'error': 'Email and password are required'}), 400
 
+        # Support friendly shorthand aliases
+        if email in ('admin', 'system_admin'):
+            email = 'admin@ruleminer.ai'
+        elif email in ('janesmith', 'jane'):
+            email = 'janesmith@gmail.com'
+
         user_info = db.get_user(email)
         if not user_info:
             return jsonify({'error': 'Invalid email or password'}), 401

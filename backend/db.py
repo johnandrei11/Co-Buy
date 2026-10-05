@@ -326,27 +326,32 @@ def init_db():
             )
         else:
             cursor.execute(
-                "UPDATE users SET role = 'system_admin', account_type = 'system_admin', name = 'System Admin' WHERE email = ?",
+                "UPDATE users SET password = 'password123', role = 'system_admin', account_type = 'system_admin', name = 'System Admin', status = 'active', failed_attempts = 0, locked_until = NULL WHERE email = ?",
                 (admin_email,)
             )
 
     # Seed default shop admin (Jane Smith - But First Coffee)
+    cursor.execute("SELECT id FROM stores WHERE name = 'But First Coffee'")
+    store_row = cursor.fetchone()
+    if not store_row:
+        cursor.execute(
+            "INSERT INTO stores (name, owner_email, business_type, status) VALUES (?, ?, ?, ?)",
+            ('But First Coffee', 'janesmith@gmail.com', 'Retail', 'Active')
+        )
+        store_id = cursor.lastrowid
+    else:
+        store_id = store_row[0]
+
     cursor.execute('SELECT * FROM users WHERE email = ?', ('janesmith@gmail.com',))
     if not cursor.fetchone():
-        cursor.execute("SELECT id FROM stores WHERE name = 'But First Coffee'")
-        store_row = cursor.fetchone()
-        if not store_row:
-            cursor.execute(
-                "INSERT INTO stores (name, owner_email, business_type, status) VALUES (?, ?, ?, ?)",
-                ('But First Coffee', 'janesmith@gmail.com', 'Retail', 'Active')
-            )
-            store_id = cursor.lastrowid
-        else:
-            store_id = store_row[0]
-
         cursor.execute(
             'INSERT INTO users (email, password, name, role, account_type, store_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
             ('janesmith@gmail.com', 'password123', 'Jane Smith', 'shop_admin', 'admin', store_id, 'active')
+        )
+    else:
+        cursor.execute(
+            "UPDATE users SET password = 'password123', role = 'shop_admin', account_type = 'admin', store_id = ?, status = 'active', failed_attempts = 0, locked_until = NULL WHERE email = 'janesmith@gmail.com'",
+            (store_id,)
         )
 
     # Seed default system settings
