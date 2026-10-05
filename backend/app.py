@@ -871,12 +871,13 @@ def upload_file():
         file_content = file.read()
         file_hash = hashlib.sha256(file_content).hexdigest()
 
-        if filename.endswith('.csv'):
+        fn_lower = filename.lower()
+        if fn_lower.endswith('.csv'):
             df = pd.read_csv(io.BytesIO(file_content))
-        elif filename.endswith(('.xls', '.xlsx')):
+        elif fn_lower.endswith(('.xls', '.xlsx')):
             df = pd.read_excel(io.BytesIO(file_content))
         else:
-            return jsonify({'error': 'Invalid file format'}), 400
+            return jsonify({'error': 'Invalid file format. Please upload a .csv, .xlsx, or .xls file.'}), 400
 
         # Preprocessing & Data Cleaning
         transactions, duplicates_removed, missing_removed, basket_values_list, date_range_days, basket_avg, tx_dates_list, detected_cols, item_details = parse_df_to_transactions(df)
@@ -968,7 +969,9 @@ def upload_file():
             }
         })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Failed to process file: {str(e)}'}), 500
 
 @app.route('/api/mine', methods=['POST'])
 def mine_rules():

@@ -552,7 +552,14 @@ const Analytics = () => {
       }
     } catch (err) {
       setUploadStatus('error');
-      const errDetail = err.response?.data?.error || 'Failed to upload file. Please check file format and try again.';
+      const is401 = err.response?.status === 401;
+      const is502 = err.response?.status === 502 || err.response?.status === 504;
+      const defaultMsg = is401
+        ? 'Session expired. Please sign out and sign back in to continue.'
+        : is502
+          ? 'Server is temporarily restarting. Please try again in 30 seconds.'
+          : 'Failed to upload file. Please check file format and try again.';
+      const errDetail = err.response?.data?.error || defaultMsg;
       setUploadError(errDetail);
       sessionStorage.removeItem('analytics_file_name');
       sessionStorage.removeItem('analytics_cleaning_stats');
