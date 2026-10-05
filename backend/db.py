@@ -1122,43 +1122,73 @@ def add_transaction(items, user_email=None, dataset_id=None):
     return tx_id
 
 def add_transactions(list_of_items, dataset_id=None, user_email=None, basket_values=None, dates=None, item_details=None):
+    if not list_of_items:
+        return
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        all_items = list(set(item for sublist in list_of_items for item in sublist))
-        for item in all_items:
-            cursor.execute('INSERT OR IGNORE INTO products (name) VALUES (?)', (item,))
+        # 1. Batch insert unique products in a single operation
+        all_items = list(set(item for sublist in list_of_items for item in sublist if item))
+        if all_items:
+            cursor.executemany('INSERT OR IGNORE INTO products (name) VALUES (?)', [(item,) for item in all_items])
+
+        # 2. Batch update product categories once for the unique product set (not in a loop)
+        cat_updates = {}
+        if item_details:
+            for basket in item_details:
+                if basket:
+                    for d in basket:
+                        it_name = d.get('item')
+                        it_cat = (d.get('category') or '').strip()
+                        if it_name and it_cat and it_cat.lower() != 'uncategorized':
+                            cat_updates[it_name] = it_cat
+        if cat_updates:
+            cursor.executemany('''
+                INSERT INTO products (name, category) VALUES (?, ?)
+                ON CONFLICT(name) DO UPDATE SET category = excluded.category
+                WHERE products.category IS NULL OR products.category = 'Uncategorized' OR excluded.category != 'Uncategorized'
+            ''', [(name, cat) for name, cat in cat_updates.items()])
+
+        # 3. Precompute sequential transaction IDs for fast batch insertion
+        cursor.execute('SELECT COALESCE(MAX(id), 0) FROM transactions')
+        start_id = cursor.fetchone()[0]
+
+        tx_rows = []
+        item_rows = []
+
         for i, items in enumerate(list_of_items):
-            bv = float(basket_values[i]) if basket_values and i < len(basket_values) else None
+            tx_id = start_id + 1 + i
+            bv = float(basket_values[i]) if basket_values and i < len(basket_values) and basket_values[i] is not None else None
             dt = dates[i] if dates and i < len(dates) and dates[i] else None
-            if dt:
-                cursor.execute('INSERT INTO transactions (dataset_id, user_email, basket_value, created_at) VALUES (?, ?, ?, ?)', (dataset_id, user_email, bv, dt))
-            else:
-                cursor.execute('INSERT INTO transactions (dataset_id, user_email, basket_value) VALUES (?, ?, ?)', (dataset_id, user_email, bv))
-            tx_id = cursor.lastrowid
-            
+            tx_rows.append((tx_id, dataset_id, user_email, bv, dt))
+
             if item_details and i < len(item_details) and item_details[i]:
-                rows_to_insert = [
-                    (
-                        tx_id,
-                        d.get('item', ''),
-                        d.get('category', 'Uncategorized') or 'Uncategorized',
-                        int(d.get('quantity', 1) or 1)
-                    )
-                    for d in item_details[i] if d.get('item')
-                ]
-                cursor.executemany('INSERT INTO transaction_items (transaction_id, item, category, quantity) VALUES (?, ?, ?, ?)', rows_to_insert)
                 for d in item_details[i]:
-                    it_name = d.get('item')
-                    it_cat = d.get('category')
-                    if it_name and it_cat and it_cat.strip() and it_cat.strip().lower() != 'uncategorized':
-                        cursor.execute('''
-                            INSERT INTO products (name, category) VALUES (?, ?)
-                            ON CONFLICT(name) DO UPDATE SET category = excluded.category
-                            WHERE products.category IS NULL OR products.category = 'Uncategorized' OR excluded.category != 'Uncategorized'
-                        ''', (it_name, it_cat.strip()))
+                    it = d.get('item', '')
+                    if it:
+                        cat = (d.get('category') or 'Uncategorized').strip() or 'Uncategorized'
+                        qty = int(d.get('quantity', 1) or 1)
+                        item_rows.append((tx_id, it, cat, qty))
             else:
-                cursor.executemany('INSERT INTO transaction_items (transaction_id, item, category, quantity) VALUES (?, ?, ?, ?)', [(tx_id, item, 'Uncategorized', 1) for item in items])
+                for item in items:
+                    if item:
+                        item_rows.append((tx_id, item, 'Uncategorized', 1))
+
+        # 4. Bulk insert transactions in 500-row chunks
+        CHUNK_SIZE = 500
+        for i in range(0, len(tx_rows), CHUNK_SIZE):
+            cursor.executemany(
+                'INSERT INTO transactions (id, dataset_id, user_email, basket_value, created_at) VALUES (?, ?, ?, ?, ?)',
+                tx_rows[i:i + CHUNK_SIZE]
+            )
+
+        # 5. Bulk insert transaction items in 500-row chunks
+        for i in range(0, len(item_rows), CHUNK_SIZE):
+            cursor.executemany(
+                'INSERT INTO transaction_items (transaction_id, item, category, quantity) VALUES (?, ?, ?, ?)',
+                item_rows[i:i + CHUNK_SIZE]
+            )
+
         conn.commit()
     except Exception as e:
         conn.rollback()
