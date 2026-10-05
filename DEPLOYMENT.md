@@ -7,32 +7,18 @@ This guide walks you through deploying **CoBuy** with the **Frontend on Netlify*
 ## Architecture Overview
 
 - **Frontend (Netlify):** React 19 + Vite SPA (hosted on Netlify CDN with free SSL and automatic Git deploys).
-- **Backend (Render):** Python Flask REST API + `mlxtend` + `gunicorn` (hosted on Render free web service).
-- **Database (Render Disk / Cloud):** SQLite (`database.db`) persisted via Render disk volume or cloud database.
+- **Backend (Render):** Python Flask REST API + `mlxtend` + `gunicorn` (hosted on Render web service).
+- **Database (Render Disk / SQLite):** High-speed local SQLite (`database.db`) persisted via Render disk volume (`/var/data`).
 
 ---
 
-## Step 1: Set Up Free Cloud Database on Turso
-
-Because Render's free tier uses an ephemeral (temporary) disk that resets when the service sleeps, we use **Turso** (free cloud SQLite/libSQL) to persist users, datasets, and stores permanently.
-
-1. Go to [turso.tech](https://turso.tech) and sign up / log in with your GitHub account.
-2. In the Turso dashboard, click **Create Database**:
-   - **Database Name:** `cobuy-db` (or any name you prefer)
-   - Choose a region closest to your users.
-3. Click into your new database:
-   - Copy your **Database URL** (e.g. `libsql://cobuy-db-yourname.turso.io`).
-   - Click **Generate Token** and copy the **Auth Token**.
-
----
-
-## Step 2: Deploy Backend to Render (Free)
+## Step 1: Deploy Backend to Render
 
 1. Sign up / Log in to [render.com](https://render.com).
 2. Click **New +** and select **Web Service**.
 3. Connect your GitHub repository (`Co-Buy`).
 4. Configure the service settings:
-   - **Name:** `cobuy-api` (or any name you prefer)
+   - **Name:** `cobuy-backend` (or your preferred service name)
    - **Region:** Choose closest to your users (e.g., Singapore or US East)
    - **Branch:** `main`
    - **Root Directory:** `backend`
@@ -44,13 +30,12 @@ Because Render's free tier uses an ephemeral (temporary) disk that resets when t
    - `FLASK_ENV` = `production`
    - `PYTHON_VERSION` = `3.12.0`
    - `SECRET_KEY` = *(click "Generate" or type a random string)*
-   - `TURSO_DATABASE_URL` = *(paste your Turso Database URL from Step 1)*
-   - `TURSO_AUTH_TOKEN` = *(paste your Turso Auth Token from Step 1)*
-6. Click **Create Web Service** (or **Manual Deploy** if your service is already created).
+   - `DATABASE_PATH` = `/var/data/database.db`
+6. Click **Create Web Service**.
 7. Once deployment finishes, Render will provide your public backend URL, for example:
-   `https://cobuy-api.onrender.com`
+   `https://cobuy-backend.onrender.com`
 
-> **Note:** Test your backend in your browser by opening `https://cobuy-api.onrender.com/healthz`. If it responds with `{"status":"healthy"}`, your backend is live and connected to Turso!
+> **Note:** Test your backend in your browser by opening `https://cobuy-backend.onrender.com/healthz`. If it responds with `{"status":"healthy"}`, your backend is live!
 
 
 ---

@@ -3,159 +3,26 @@ import os
 import datetime
 import json
 import logging
-
-try:
-    import libsql
-except ImportError:
-    libsql = None
-
 logger = logging.getLogger('cobuy_db')
 
 DB_PATH = os.environ.get('DATABASE_PATH') or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database.db')
-TURSO_DATABASE_URL = os.environ.get('TURSO_DATABASE_URL')
-TURSO_AUTH_TOKEN = os.environ.get('TURSO_AUTH_TOKEN')
-
-class LibsqlRow(dict):
-    """Wrapper that provides sqlite3.Row-like behavior (column name, index, dict, iter) for libsql."""
-    def __init__(self, description, values):
-        self._keys = [col[0] for col in description] if description else []
-        self._values = tuple(values)
-        super().__init__(zip(self._keys, self._values))
-
-    def __getitem__(self, item):
-        if isinstance(item, int):
-            return self._values[item]
-        return super().__getitem__(item)
-
-def _handle_libsql_error(e):
-    msg = str(e)
-    if 'UNIQUE constraint failed' in msg or 'FOREIGN KEY constraint failed' in msg or 'Integrity' in msg:
-        raise sqlite3.IntegrityError(msg) from e
-    if 'duplicate column' in msg or 'no such table' in msg or 'already exists' in msg:
-        raise sqlite3.OperationalError(msg) from e
-    raise e
-
-class LibsqlCursorWrapper:
-    """Cursor wrapper for libsql returning LibsqlRow objects and mapping exceptions."""
-    def __init__(self, cursor):
-        self._cursor = cursor
-
-    def execute(self, *args, **kwargs):
-        try:
-            self._cursor.execute(*args, **kwargs)
-            return self
-        except Exception as e:
-            _handle_libsql_error(e)
-
-    def executemany(self, *args, **kwargs):
-        try:
-            self._cursor.executemany(*args, **kwargs)
-            return self
-        except Exception as e:
-            _handle_libsql_error(e)
-
-    def fetchone(self):
-        row = self._cursor.fetchone()
-        if row is None:
-            return None
-        return LibsqlRow(self._cursor.description, row)
-
-    def fetchall(self):
-        desc = self._cursor.description
-        return [LibsqlRow(desc, r) for r in self._cursor.fetchall()]
-
-    def fetchmany(self, size=None):
-        desc = self._cursor.description
-        return [LibsqlRow(desc, r) for r in self._cursor.fetchmany(size)]
-
-    @property
-    def lastrowid(self):
-        return getattr(self._cursor, 'lastrowid', None)
-
-    @property
-    def rowcount(self):
-        return getattr(self._cursor, 'rowcount', -1)
-
-    @property
-    def description(self):
-        return self._cursor.description
-
-    def close(self):
-        return self._cursor.close()
-
-class LibsqlConnectionWrapper:
-    """Connection wrapper for remote Turso/libSQL database."""
-    def __init__(self, raw_conn):
-        self._conn = raw_conn
-
-    def cursor(self):
-        return LibsqlCursorWrapper(self._conn.cursor())
-
-    def execute(self, *args, **kwargs):
-        try:
-            cur = self._conn.cursor()
-            cur.execute(*args, **kwargs)
-            return LibsqlCursorWrapper(cur)
-        except Exception as e:
-            _handle_libsql_error(e)
-
-    def executemany(self, *args, **kwargs):
-        try:
-            cur = self._conn.cursor()
-            cur.executemany(*args, **kwargs)
-            return LibsqlCursorWrapper(cur)
-        except Exception as e:
-            _handle_libsql_error(e)
-
-    def commit(self):
-        return self._conn.commit()
-
-    def rollback(self):
-        return self._conn.rollback()
-
-    def close(self):
-        try:
-            return self._conn.close()
-        except Exception:
-            pass
 
 def get_db_connection():
-    # If Turso Cloud credentials are provided, connect to Turso
-    raw_url = os.environ.get('TURSO_DATABASE_URL') or TURSO_DATABASE_URL or ''
-    turso_url = raw_url.strip().strip("'\"")
-    # Auto-correct common typo where letter 'i' was entered as number '1' ('l1bsql://')
-    if turso_url.startswith('l1bsql://'):
-        turso_url = 'libsql://' + turso_url[9:]
-    raw_token = os.environ.get('TURSO_AUTH_TOKEN') or TURSO_AUTH_TOKEN or ''
-    turso_token = raw_token.strip().strip("'\"")
-    if turso_url and libsql:
-        kwargs = {}
-        if turso_token:
-            kwargs['auth_token'] = turso_token
-        raw_conn = libsql.connect(turso_url, **kwargs)
-        return LibsqlConnectionWrapper(raw_conn)
-    # Local SQLite fallback
+    db_dir = os.path.dirname(DB_PATH)
+    if db_dir and not os.path.exists(db_dir):
+        try:
+            os.makedirs(db_dir, exist_ok=True)
+        except Exception:
+            pass
     conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")
     return conn
 
-
-
-def init_db(force=False):
+def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
-
-    # Fast-path check: if schema already exists, skip redundant DDL/PRAGMAs over remote network
-    if not force:
-        try:
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-            if cursor.fetchone():
-                conn.close()
-                return
-        except Exception:
-            pass
 
     # stores
     cursor.execute('''
@@ -449,17 +316,19 @@ def init_db(force=False):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_analyses_dataset ON analyses(dataset_id)")
 
     # seed or update System Admin
-    cursor.execute('SELECT * FROM users WHERE email = ?', ('admin@ruleminer.ai',))
-    row = cursor.fetchone()
-    if not row:
-        cursor.execute(
-            'INSERT INTO users (email, password, name, role, account_type, status) VALUES (?, ?, ?, ?, ?, ?)',
-            ('admin@ruleminer.ai', 'password123', 'System Admin', 'system_admin', 'system_admin', 'active')
-        )
-    else:
-        cursor.execute(
-            "UPDATE users SET role = 'system_admin', account_type = 'system_admin', name = 'System Admin' WHERE email = 'admin@ruleminer.ai'"
-        )
+    for admin_email in ['admin@ruleminer.ai', 'admin@cobuy.com']:
+        cursor.execute('SELECT * FROM users WHERE email = ?', (admin_email,))
+        row = cursor.fetchone()
+        if not row:
+            cursor.execute(
+                'INSERT INTO users (email, password, name, role, account_type, status) VALUES (?, ?, ?, ?, ?, ?)',
+                (admin_email, 'password123', 'System Admin', 'system_admin', 'system_admin', 'active')
+            )
+        else:
+            cursor.execute(
+                "UPDATE users SET role = 'system_admin', account_type = 'system_admin', name = 'System Admin' WHERE email = ?",
+                (admin_email,)
+            )
 
     # Seed default shop admin (Jane Smith - But First Coffee)
     cursor.execute('SELECT * FROM users WHERE email = ?', ('janesmith@gmail.com',))

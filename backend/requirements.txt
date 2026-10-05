@@ -4,4 +4,3 @@ pandas
 mlxtend
 openpyxl
 gunicorn
-libsql
