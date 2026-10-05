@@ -46,46 +46,70 @@ const CATEGORY_MAP = {
 };
 
 /**
- * Format a human-readable fraction from confidence (e.g. 33% -> "1 in 3")
+ * Format a human-readable fraction from confidence using slash notation (e.g. 66% -> "2/3", 33% -> "1/3")
  */
 const getConfidenceFraction = (conf) => {
-  if (conf == null || isNaN(conf) || conf <= 0) return '1 in 3';
+  if (conf == null || isNaN(conf) || conf <= 0) return '1/3';
   const val = conf > 1 ? conf / 100 : conf;
-  if (val >= 0.90) return '9 in 10';
-  if (val >= 0.75) return '4 in 5';
-  if (val >= 0.63) return '2 in 3';
-  if (val >= 0.45) return '1 in 2';
-  if (val >= 0.30) return '1 in 3';
-  if (val >= 0.22) return '1 in 4';
-  if (val >= 0.18) return '1 in 5';
-  if (val >= 0.12) return '1 in 7';
-  if (val >= 0.08) return '1 in 10';
+  if (val >= 0.95) return '100%';
+  if (val >= 0.88) return '9/10';
+  if (val >= 0.78) return '4/5';
+  if (val >= 0.68) return '3/4';
+  if (val >= 0.58) return '2/3';
+  if (val >= 0.45) return '1/2';
+  if (val >= 0.38) return '2/5';
+  if (val >= 0.28) return '1/3';
+  if (val >= 0.22) return '1/4';
+  if (val >= 0.18) return '1/5';
+  if (val >= 0.12) return '1/7';
+  if (val >= 0.08) return '1/10';
   const denom = Math.max(2, Math.round(1 / val));
-  return `1 in ${denom}`;
+  return `1/${denom}`;
 };
 
 /**
- * Format a human-readable fraction from support (e.g. 5.8% -> "1 in 17")
+ * Calculate support denominator (e.g. 4.8% -> 21, 5.8% -> 17)
  */
-const getSupportFraction = (supp) => {
-  if (supp == null || isNaN(supp) || supp <= 0) return '1 in 17';
+const getSupportDenom = (supp) => {
+  if (supp == null || isNaN(supp) || supp <= 0) return 21;
   const val = supp > 1 ? supp / 100 : supp;
-  const denom = Math.max(2, Math.round(1 / val));
-  return `1 in ${denom}`;
+  return Math.max(2, Math.round(1 / val));
 };
 
 /**
- * Extract a concise product anchor keyword for the habit metric (e.g. "Flavored Fries" -> "Fries")
+ * Balance unclosed parentheses in product titles (e.g. "Latte (Iced" -> "Latte (Iced)")
  */
-const getShortAnchorName = (name) => {
-  if (!name) return 'Fries';
-  const clean = name.replace(/\s*\(.*?\)\s*/g, '').trim();
-  const words = clean.split(' ').filter(Boolean);
-  if (words.length > 1 && words[0].toLowerCase() === 'flavored') {
-    return words.slice(1).join(' ');
+const balanceParens = (str) => {
+  if (!str) return '';
+  const openCount = (str.match(/\(/g) || []).length;
+  const closeCount = (str.match(/\)/g) || []).length;
+  if (openCount > closeCount) {
+    return str + ')'.repeat(openCount - closeCount);
   }
-  if (clean.length <= 15) return clean;
-  return words.slice(0, 2).join(' ');
+  return str;
+};
+
+/**
+ * Extract a clean, natural product name without technical size/temperature specs
+ * e.g. "Cafe Latte 16oz (Iced" -> "Cafe Latte"
+ * e.g. "Hungarian Sandwich" -> "Hungarian Sandwich"
+ * e.g. "Flavored Fries" -> "Fries"
+ */
+const getCleanProductName = (name) => {
+  if (!name) return '';
+  let clean = name
+    // Strip volume and size indications like 16oz, 12oz, 22oz, 500ml, etc.
+    .replace(/\b\d+(\.\d+)?\s*(oz|ml|g|kg|l)\b/gi, '')
+    // Strip parenthetical modifiers like (Iced), (Hot), or unclosed (Iced
+    .replace(/\s*\([^)]*\)?/g, '')
+    .trim();
+
+  // Strip leading generic adjectives like "Flavored" if followed by another word
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length > 1 && words[0].toLowerCase() === 'flavored') {
+    clean = words.slice(1).join(' ');
+  }
+  return clean || name.trim();
 };
 
 /**
@@ -147,12 +171,14 @@ const RecommendationDetailsDrawer = ({
     ? `${data.category || 'Grow'} • ${data.type}`
     : categoryConfig.label;
 
-  // Product Title
+  // Product Titles with balanced parentheses
   const products = data.products || [];
-  const p1 = products[0]?.name;
-  const p2 = products[1]?.name || (products.length > 2 ? `${products.length - 1} items` : null);
-  const derivedTitle = p1 && p2 ? `${p1} + ${p2}` : p1 || 'Product Opportunity';
-  const modalTitle = data.title || derivedTitle;
+  const p1Raw = products[0]?.name;
+  const p2Raw = products[1]?.name || (products.length > 2 ? `${products.length - 1} items` : null);
+  const p1Balanced = balanceParens(p1Raw);
+  const p2Balanced = balanceParens(p2Raw);
+  const derivedTitle = p1Balanced && p2Balanced ? `${p1Balanced} + ${p2Balanced}` : p1Balanced || 'Product Opportunity';
+  const modalTitle = data.title ? balanceParens(data.title) : derivedTitle;
 
   // Timestamp
   const analysisPeriod = data.analysisPeriod || {};
@@ -171,14 +197,15 @@ const RecommendationDetailsDrawer = ({
   const rawTxCount = metrics.coTransactions ?? supporting.transactionCount ?? 259;
   const volumeValue = typeof rawTxCount === 'number' ? rawTxCount.toLocaleString() : rawTxCount;
 
-  // KPI 2: Overall Basket Ratio (Support)
-  const rawSupport = supporting.supportPct ?? (metrics.support != null ? metrics.support * 100 : 5.8);
-  const supportFraction = getSupportFraction(rawSupport);
+  // KPI 2: Overall Order Frequency (Support)
+  const rawSupport = supporting.supportPct ?? (metrics.support != null ? metrics.support * 100 : 4.8);
+  const supportDenom = getSupportDenom(rawSupport);
 
   // Hero: Confidence / Top Habit Metric
-  const rawConfidence = supporting.confidencePct ?? (metrics.confidence != null ? metrics.confidence * 100 : 33.3);
+  const rawConfidence = supporting.confidencePct ?? (metrics.confidence != null ? metrics.confidence * 100 : 66.7);
   const confidenceFraction = getConfidenceFraction(rawConfidence);
-  const anchorShortName = getShortAnchorName(p1);
+  const anchorName = getCleanProductName(p1Raw) || 'this item';
+  const targetName = p2Raw ? getCleanProductName(p2Raw) : 'companion items';
   const liftRatio = supporting.liftRatio ?? (metrics.lift != null ? Number(metrics.lift).toFixed(1) : '2.8');
 
   // ── 3. Action Considerations ──
@@ -255,7 +282,9 @@ const RecommendationDetailsDrawer = ({
           title={`Confidence: ${rawConfidence}% | Lift Ratio: ${liftRatio}x`}
         >
           <span className="cobuy-bop-hero-highlight">{confidenceFraction}</span>
-          <span className="cobuy-bop-hero-text"> of {anchorShortName} orders also bought this</span>
+          <span className="cobuy-bop-hero-text">
+            {' '}of {anchorName} orders also bought {targetName}.
+          </span>
         </div>
 
         {/* ── Secondary Metrics Stack ── */}
@@ -270,21 +299,24 @@ const RecommendationDetailsDrawer = ({
             </span>
             <div className="cobuy-bop-metric-meta">
               <span className="cobuy-bop-metric-label">Total Co-Transactions</span>
-              <span className="cobuy-bop-metric-sub">Transactions</span>
+              <span className="cobuy-bop-metric-sub">Transactions containing both items</span>
             </div>
           </div>
 
-          {/* Metric 2: All Orders Frequency */}
+          {/* Metric 2: Overall Order Frequency (Clear & Unambiguous) */}
           <div
             className="cobuy-bop-metric-card"
-            title={`Support: ${rawSupport}% of all store transactions`}
+            title={`Mathematical Support: ${rawSupport}% of all store transactions`}
           >
             <span className="cobuy-bop-metric-num cobuy-bop-metric-num--green">
-              {supportFraction}
+              1 in {supportDenom}
             </span>
-            <span className="cobuy-bop-metric-label cobuy-bop-metric-label--green">
-              Included in all orders
-            </span>
+            <div className="cobuy-bop-metric-meta">
+              <span className="cobuy-bop-metric-label">Overall Order Frequency</span>
+              <span className="cobuy-bop-metric-sub">
+                Purchased together in 1 of every {supportDenom} customer orders
+              </span>
+            </div>
           </div>
         </div>
 
