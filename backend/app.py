@@ -20,6 +20,7 @@ import re
 from mlxtend.frequent_patterns import apriori, fpgrowth, association_rules
 from transaction_encoder import TransactionEncoder
 
+import threading
 import db
 from recommendation_service import RecommendationEngine
 
@@ -38,8 +39,25 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'cobuy-secure-hmac-key-production-2026
 app.secret_key = SECRET_KEY
 CORS(app)
 
-# Initialize database tables
-db.init_db()
+_db_initialized = False
+_db_init_lock = threading.Lock()
+
+def ensure_db_initialized():
+    global _db_initialized
+    if not _db_initialized:
+        with _db_init_lock:
+            if not _db_initialized:
+                try:
+                    db.init_db()
+                except Exception as e:
+                    logger.warning("Database init check notice: %s", e)
+                _db_initialized = True
+
+@app.before_request
+def before_request_hook():
+    if request.path in ('/healthz', '/'):
+        return
+    ensure_db_initialized()
 
 @app.route('/')
 @app.route('/healthz')
@@ -674,84 +692,91 @@ def index():
 
 @app.route('/api/login', methods=['POST'])
 def login():
-    params = request.json or {}
-    email    = params.get('email', '').strip().lower()
-    password = params.get('password', '')
+    try:
+        params = request.json or {}
+        email    = params.get('email', '').strip().lower()
+        password = params.get('password', '')
 
-    if not email or not password:
-        return jsonify({'error': 'Email and password are required'}), 400
+        if not email or not password:
+            return jsonify({'error': 'Email and password are required'}), 400
 
-    user_info = db.get_user(email)
-    if not user_info:
-        return jsonify({'error': 'Invalid email or password'}), 401
-
-    # Check lockout status first
-    lockout_info = db.get_user_lockout_info(email)
-    if lockout_info and lockout_info['is_locked']:
-        rem_sec = lockout_info['remaining_seconds']
-        rem_min = max(1, (rem_sec + 59) // 60)
-        return jsonify({
-            'error': f'Account temporarily locked. Please try again after {rem_min} minute{"s" if rem_min > 1 else ""}.',
-            'is_locked': True,
-            'remaining_seconds': rem_sec,
-            'locked_until': lockout_info['locked_until']
-        }), 423
-
-    # Check password
-    if user_info['password'] != password:
-        failed_res = db.record_failed_login(email)
-        if failed_res and failed_res['is_locked']:
-            return jsonify({
-                'error': failed_res['message'],
-                'is_locked': True,
-                'remaining_seconds': failed_res['remaining_seconds'],
-                'locked_until': failed_res['locked_until'],
-                'failed_attempts': failed_res['failed_attempts']
-            }), 423
-        elif failed_res:
-            return jsonify({
-                'error': failed_res['message'],
-                'is_locked': False,
-                'attempts_remaining': failed_res['attempts_remaining'],
-                'failed_attempts': failed_res['failed_attempts']
-            }), 401
-        else:
+        user_info = db.get_user(email)
+        if not user_info:
             return jsonify({'error': 'Invalid email or password'}), 401
 
-    # Password is correct: reset lockout state
-    db.reset_user_lockout(email)
+        # Check lockout status first
+        lockout_info = db.get_user_lockout_info(email)
+        if lockout_info and lockout_info['is_locked']:
+            rem_sec = lockout_info['remaining_seconds']
+            rem_min = max(1, (rem_sec + 59) // 60)
+            return jsonify({
+                'error': f'Account temporarily locked. Please try again after {rem_min} minute{"s" if rem_min > 1 else ""}.',
+                'is_locked': True,
+                'remaining_seconds': rem_sec,
+                'locked_until': lockout_info['locked_until']
+            }), 423
 
-    store_id   = _get_store_id_for_user(user_info)
-    store_name = None
-    business_status = 'Active'
-    if store_id:
-        store      = db.get_store_by_id(store_id)
-        if store:
-            store_name = store.get('name')
-            business_status = store.get('status', 'Active')
+        # Check password
+        if user_info['password'] != password:
+            failed_res = db.record_failed_login(email)
+            if failed_res and failed_res['is_locked']:
+                return jsonify({
+                    'error': failed_res['message'],
+                    'is_locked': True,
+                    'remaining_seconds': failed_res['remaining_seconds'],
+                    'locked_until': failed_res['locked_until'],
+                    'failed_attempts': failed_res['failed_attempts']
+                }), 423
+            elif failed_res:
+                return jsonify({
+                    'error': failed_res['message'],
+                    'is_locked': False,
+                    'attempts_remaining': failed_res['attempts_remaining'],
+                    'failed_attempts': failed_res['failed_attempts']
+                }), 401
+            else:
+                return jsonify({'error': 'Invalid email or password'}), 401
 
-    # role column is the authoritative source (system_admin | business_admin/shop_admin | staff/team_member)
-    role         = user_info.get('role') or 'shop_admin'
-    account_type = user_info.get('account_type') or 'admin'
-    status       = user_info.get('status') or 'active'
+        # Password is correct: reset lockout state
+        db.reset_user_lockout(email)
 
-    # Audit log login event
-    ip_addr = request.remote_addr if request else None
-    db.log_activity(store_id, email, 'USER_LOGIN', {'role': role, 'business_name': store_name}, status='Success', ip_address=ip_addr)
+        store_id   = _get_store_id_for_user(user_info)
+        store_name = None
+        business_status = 'Active'
+        if store_id:
+            store      = db.get_store_by_id(store_id)
+            if store:
+                store_name = store.get('name')
+                business_status = store.get('status', 'Active')
 
-    return jsonify({
-        'token': generate_auth_token(email),
-        'user': {
-            'email':           email,
-            'name':            user_info['name'],
-            'role':            role,
-            'account_type':    account_type,
-            'status':          status,
-            'store_id':        store_id,
-            'store_name':      store_name,
-            'business_status': business_status
-        }
-    })
+        # role column is the authoritative source (system_admin | business_admin/shop_admin | staff/team_member)
+        role         = user_info.get('role') or 'shop_admin'
+        account_type = user_info.get('account_type') or 'admin'
+        status       = user_info.get('status') or 'active'
+
+        # Audit log login event (non-fatal if it fails)
+        try:
+            ip_addr = request.remote_addr if request else None
+            db.log_activity(store_id, email, 'USER_LOGIN', {'role': role, 'business_name': store_name}, status='Success', ip_address=ip_addr)
+        except Exception as log_err:
+            logger.warning("Failed to record login audit log: %s", log_err)
+
+        return jsonify({
+            'token': generate_auth_token(email),
+            'user': {
+                'email':           email,
+                'name':            user_info['name'],
+                'role':            role,
+                'account_type':    account_type,
+                'status':          status,
+                'store_id':        store_id,
+                'store_name':      store_name,
+                'business_status': business_status
+            }
+        })
+    except Exception as e:
+        logger.exception("Unexpected error during login for %s: %s", params.get('email') if 'params' in locals() else 'unknown', e)
+        return jsonify({'error': f'Login failed: {str(e)}'}), 500
 
 @app.route('/api/admin/unlock-account', methods=['POST'])
 def unlock_account():

@@ -138,7 +138,10 @@ class LibsqlConnectionWrapper:
         return self._conn.rollback()
 
     def close(self):
-        return self._conn.close()
+        try:
+            return self._conn.close()
+        except Exception:
+            pass
 
 def get_db_connection():
     # If Turso Cloud credentials are provided, connect to Turso
@@ -164,9 +167,19 @@ def get_db_connection():
 
 
 
-def init_db():
+def init_db(force=False):
     conn = get_db_connection()
     cursor = conn.cursor()
+
+    # Fast-path check: if schema already exists, skip redundant DDL/PRAGMAs over remote network
+    if not force:
+        try:
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+            if cursor.fetchone():
+                conn.close()
+                return
+        except Exception:
+            pass
 
     # stores
     cursor.execute('''
