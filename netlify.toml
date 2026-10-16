@@ -1,0 +1,12 @@
+# Netlify Configuration for CoBuy Frontend
+
+[build]
+  base = "frontend"
+  command = "npm run build"
+  publish = "dist"
+
+# Single-Page Application (SPA) redirect rule
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

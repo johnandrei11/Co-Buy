@@ -1,231 +1,87 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Shield, 
-  Globe, 
-  Database,
-  Sliders,
-  Check,
-  Sun,
-  Moon
-} from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { SettingsLayout, SETTINGS_SECTIONS } from './settings/SettingsLayout';
+import { GeneralSettings } from './settings/views/GeneralSettings';
+import { ProfileSettings } from './settings/views/ProfileSettings';
+import { SecurityPrivacySettings } from './settings/views/SecurityPrivacySettings';
+import { NotificationSettings } from './settings/views/NotificationSettings';
+import { AppearanceSettings } from './settings/views/AppearanceSettings';
+import { appearancePreferencesAdapter } from './settings/adapters/settingsAdapters';
 
-const Settings = () => {
-  const [theme, setTheme] = useState(() => {
-    return localStorage.getItem('theme') || 'dark';
+const Settings = ({ user: propUser, theme: propTheme, onThemeChange }) => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentTabParam = searchParams.get('tab') || searchParams.get('section');
+
+  const [activeSection, setActiveSection] = useState(() => {
+    if (currentTabParam && SETTINGS_SECTIONS.some((s) => s.id === currentTabParam)) {
+      return currentTabParam;
+    }
+    return 'general';
+  });
+
+  const [user, setUser] = useState(() => {
+    if (propUser) return propUser;
+    try {
+      const savedUser = localStorage.getItem('user');
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch (e) {
+      return null;
+    }
   });
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('theme', theme);
-  }, [theme]);
-
-  const [params, setParams] = useState(() => {
-    const saved = sessionStorage.getItem('analytics_params');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        return {
-          min_support: parsed.min_support ?? 0.05,
-          min_confidence: parsed.min_confidence ?? 0.5,
-          min_lift: parsed.min_lift ?? 1.0,
-          algorithm: 'auto'
-        };
-      } catch (e) {
-        // Fallback to default
-      }
+    if (propUser) {
+      setUser(propUser);
     }
-    return {
-      min_support: 0.05,
-      min_confidence: 0.5,
-      min_lift: 1.0,
-      algorithm: 'auto'
-    };
-  });
+  }, [propUser]);
 
-  const [saveSuccess, setSaveSuccess] = useState(false);
+  // Synchronize query param if present
+  useEffect(() => {
+    if (currentTabParam && SETTINGS_SECTIONS.some((s) => s.id === currentTabParam)) {
+      setActiveSection(currentTabParam);
+    }
+  }, [currentTabParam]);
 
-  const handleSave = () => {
-    const updatedParams = { ...params, algorithm: 'auto' };
-    sessionStorage.setItem('analytics_params', JSON.stringify(updatedParams));
-    setSaveSuccess(true);
-    setTimeout(() => {
-      setSaveSuccess(false);
-    }, 2500);
+  // Initialize and apply saved appearance preferences to DOM on mount
+  useEffect(() => {
+    const prefs = appearancePreferencesAdapter.getPreferences();
+    appearancePreferencesAdapter.applyPreferencesToDOM(prefs);
+  }, []);
+
+  const handleSectionChange = (sectionId) => {
+    setActiveSection(sectionId);
+    setSearchParams({ tab: sectionId });
   };
 
-  const handleReset = () => {
-    const defaultParams = {
-      min_support: 0.05,
-      min_confidence: 0.5,
-      min_lift: 1.0,
-      algorithm: 'auto'
-    };
-    setParams(defaultParams);
-    sessionStorage.setItem('analytics_params', JSON.stringify(defaultParams));
-    setSaveSuccess(true);
-    setTimeout(() => {
-      setSaveSuccess(false);
-    }, 2500);
+  const renderActiveSection = () => {
+    switch (activeSection) {
+      case 'profile':
+        return <ProfileSettings user={user} onUpdateUser={setUser} />;
+      case 'security':
+        return <SecurityPrivacySettings user={user} />;
+      case 'notifications':
+        return <NotificationSettings />;
+      case 'appearance':
+        return <AppearanceSettings />;
+      case 'general':
+      default:
+        return (
+          <GeneralSettings
+            user={user}
+            theme={propTheme}
+            onThemeChange={onThemeChange}
+          />
+        );
+    }
   };
 
   return (
-    <div className="fade-in">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">
-            <Sliders size={28} style={{ color: 'var(--primary-color)' }} />
-            System Settings
-          </h1>
-          <p className="page-subtitle">Manage mining parameters and application preferences.</p>
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem' }}>
-        <div className="card" style={{ height: 'fit-content' }}>
-          <div className="nav-link active" style={{ marginBottom: '0.5rem' }}>
-            <Sliders size={20} /> General Preferences
-          </div>
-          <div className="nav-link" style={{ marginBottom: '0.5rem' }}>
-            <Shield size={20} /> Security & Privacy
-          </div>
-          <div className="nav-link" style={{ marginBottom: '0.5rem' }}>
-            <Database size={20} /> Data Management
-          </div>
-          <div className="nav-link">
-            <Globe size={20} /> API Access
-          </div>
-        </div>
-
-        <div className="card" style={{ maxWidth: '800px' }}>
-          <div style={{ marginBottom: '2.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <h2 style={{ fontSize: '1.5rem', fontWeight: '700', marginBottom: '0.5rem' }}>General Preferences</h2>
-              <p className="help-text">Configure default behaviors and specialization settings for your workspace.</p>
-            </div>
-            {saveSuccess && (
-              <div style={{
-                background: 'rgba(16, 185, 129, 0.1)',
-                border: '1px solid rgba(16, 185, 129, 0.2)',
-                color: '#10b981',
-                padding: '0.5rem 1rem',
-                borderRadius: '8px',
-                fontSize: '0.85rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                fontWeight: '600',
-                animation: 'fadeIn 0.2s ease-out'
-              }}>
-                <Check size={16} /> Saved Successfully
-              </div>
-            )}
-          </div>
-          
-          {/* Theme Appearance Setting Card */}
-          <div style={{ borderTop: '1px solid var(--border-color)', margin: '1.5rem 0 2rem 0', paddingTop: '1.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-              {theme === 'dark' ? <Moon size={22} style={{ color: 'var(--primary-color)' }} /> : <Sun size={22} style={{ color: 'var(--primary-color)' }} />}
-              <h3 style={{ fontSize: '1.15rem', fontWeight: '700', color: 'var(--text-main)', margin: 0 }}>Interface Theme Appearance</h3>
-            </div>
-            <p className="help-text" style={{ marginBottom: '1.25rem' }}>Choose between bright, airy light mode and complementary living dark mode.</p>
-            <div style={{ display: 'flex', gap: '1rem' }}>
-              <button
-                type="button"
-                onClick={() => setTheme('light')}
-                style={{
-                  flex: 1,
-                  padding: '1rem',
-                  borderRadius: '12px',
-                  border: `2px solid ${theme === 'light' ? 'var(--primary-color)' : 'var(--border-color)'}`,
-                  background: theme === 'light' ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
-                  color: 'var(--text-main)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.75rem',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  transition: 'var(--transition)'
-                }}
-              >
-                <Sun size={20} /> Bright Light Mode
-              </button>
-              <button
-                type="button"
-                onClick={() => setTheme('dark')}
-                style={{
-                  flex: 1,
-                  padding: '1rem',
-                  borderRadius: '12px',
-                  border: `2px solid ${theme === 'dark' ? 'var(--primary-color)' : 'var(--border-color)'}`,
-                  background: theme === 'dark' ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
-                  color: 'var(--text-main)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.75rem',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  transition: 'var(--transition)'
-                }}
-              >
-                <Moon size={20} /> Living Dark Mode
-              </button>
-            </div>
-          </div>
-
-          <div style={{ borderTop: '1px solid var(--border-color)', margin: '2rem 0', paddingTop: '1.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
-              <Database size={22} style={{ color: 'var(--primary-color)' }} />
-              <h3 style={{ fontSize: '1.15rem', fontWeight: '700', color: 'var(--text-main)', margin: 0 }}>Adaptive Threshold Engine</h3>
-            </div>
-            
-            <div style={{
-              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(16, 185, 129, 0.05) 100%)',
-              border: '1px solid rgba(99, 102, 241, 0.2)',
-              borderRadius: '12px',
-              padding: '1.5rem',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '1.25rem'
-            }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#10b981', fontWeight: '700', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
-                  <Check size={16} /> Fully Autonomous Optimization Enabled
-                </div>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.6', margin: 0 }}>
-                  Manual thresholds (Support, Confidence, and Lift) have been removed from user controls to eliminate dead-end "No Recommendations Found" errors. Cobuy now intelligently categorizes datasets by store type and runs an <strong>Adaptive Relaxation Ladder</strong>.
-                </p>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem' }}>
-                <div style={{ background: 'var(--card-bg)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.3rem' }}>Coffee Shop Defaults</div>
-                  <div className="mono" style={{ fontSize: '0.9rem', color: 'var(--text-main)', fontWeight: '600' }}>1.0% Support / 20% Conf</div>
-                </div>
-                <div style={{ background: 'var(--card-bg)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.3rem' }}>Convenience / Retail</div>
-                  <div className="mono" style={{ fontSize: '0.9rem', color: 'var(--text-main)', fontWeight: '600' }}>0.5% Support / 15% Conf</div>
-                </div>
-                <div style={{ background: 'var(--card-bg)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.3rem' }}>Pet Food Store</div>
-                  <div className="mono" style={{ fontSize: '0.9rem', color: 'var(--text-main)', fontWeight: '600' }}>1.0% Support / 15% Conf</div>
-                </div>
-              </div>
-
-              <div style={{ fontSize: '0.82rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span>* Lift threshold is fixed at a hard floor of <strong>1.0</strong> across all tiers to guarantee statistical relevance above random chance.</span>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ marginTop: '2rem', display: 'flex', gap: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '2rem' }}>
-            <button className="btn btn-primary" onClick={handleSave} style={{ padding: '0.875rem 2rem' }}>Save Changes</button>
-            <button className="btn btn-secondary" onClick={handleReset} style={{ padding: '0.875rem 2rem' }}>Reset Defaults</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <SettingsLayout
+      activeSection={activeSection}
+      onSectionChange={handleSectionChange}
+    >
+      {renderActiveSection()}
+    </SettingsLayout>
   );
 };
 

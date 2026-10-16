@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { BrowserRouter as Router, Routes, Route, NavLink, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, NavLink, Navigate, useNavigate, useSearchParams, useLocation, Link } from 'react-router-dom';
 import {
   LayoutDashboard,
   BarChart3,
@@ -22,8 +22,11 @@ import {
   Store,
   CheckCircle2,
   XCircle,
-  Clock
+  Clock,
+  Search,
+  HelpCircle
 } from 'lucide-react';
+import Landing from './pages/Landing';
 import Dashboard from './pages/Dashboard';
 import Analytics from './pages/Analytics';
 import Evaluation from './pages/Evaluation';
@@ -33,10 +36,21 @@ import Dataset from './pages/Dataset';
 import Login, { PendingActivation, JoinPage } from './pages/Login';
 import ActivityLog from './pages/ActivityLog';
 import Logo from './components/Logo';
+import AdminLayout from './components/admin/AdminLayout';
+import UserLayout from './components/UserLayout';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminBusinesses from './pages/admin/AdminBusinesses';
+import AdminUsers from './pages/admin/AdminUsers';
+import AdminDatasets from './pages/admin/AdminDatasets';
+import AdminAnalysisHistory from './pages/admin/AdminAnalysisHistory';
+import AdminEvaluations from './pages/admin/AdminEvaluations';
+import AdminAuditLogs from './pages/admin/AdminAuditLogs';
+import AdminSettings from './pages/admin/AdminSettings';
+import AdminProfile from './pages/admin/AdminProfile';
+import { AdminThemeProvider } from './context/AdminThemeContext';
 import './index.css';
 import axios from 'axios';
-
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from './config/api';
 
 axios.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
@@ -56,6 +70,21 @@ axios.interceptors.request.use((config) => {
   }
   return config;
 });
+
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      localStorage.removeItem('activeDatasetId');
+      localStorage.removeItem('activeDatasetName');
+      sessionStorage.clear();
+      window.dispatchEvent(new Event('auth-session-expired'));
+    }
+    return Promise.reject(error);
+  }
+);
 
 // ── Invite Panel (shown inside sidebar for admins) ────────────────────────────
 const InvitePanel = ({ user, onClose }) => {
@@ -474,6 +503,10 @@ const Sidebar = ({ onLogout, user, theme, onToggleTheme, onOpenInvite }) => {
   // Actual security enforcement happens server-side via role column.
   const isAdmin = user?.role === 'shop_admin';
 
+  const location = useLocation();
+  const hasAnalyticsResults = Boolean(sessionStorage.getItem('analytics_results'));
+  const isSetupState = location.pathname === '/analytics' && !hasAnalyticsResults;
+
   return (
     <aside className="sidebar">
       <div className="sidebar-logo" style={{ paddingBottom: '1.25rem' }}>
@@ -504,6 +537,24 @@ const Sidebar = ({ onLogout, user, theme, onToggleTheme, onOpenInvite }) => {
           </NavLink>
         )}
       </nav>
+
+      {/* Quick Guide Card from Reference A & B */}
+      <div className="cobuy-sidebar-guide-card">
+        <div className="cobuy-sidebar-guide-icon">
+          <HelpCircle size={18} />
+        </div>
+        <div className="cobuy-sidebar-guide-title">
+          {isSetupState ? 'Need help getting started?' : 'Not sure how it works?'}
+        </div>
+        <div className="cobuy-sidebar-guide-desc">
+          {isSetupState
+            ? 'Follow the steps to upload your dataset, verify columns, and run analysis to unlock customer recommendations.'
+            : 'This page shows the most frequently bought products, top sellers, and useful recommendations based on your sales data.'}
+        </div>
+        <Link to="/analytics" className="cobuy-sidebar-guide-link">
+          Quick Guide →
+        </Link>
+      </div>
 
       <div className="sidebar-footer">
         {isAdmin && (
@@ -575,16 +626,57 @@ function App() {
 
   const [showInvitePanel, setShowInvitePanel] = useState(false);
 
-  const isAdmin = user?.role === 'shop_admin';
-  const isUnlinkedMember = user?.role === 'team_member' && !user?.store_id;
+  const isSystemAdmin = user?.role === 'system_admin';
+  const isAdmin = user?.role === 'shop_admin' || user?.role === 'business_admin';
+  const isUnlinkedMember = (user?.role === 'team_member' || user?.role === 'staff') && !user?.store_id;
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  const handleToggleTheme = () => {
-    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
+  useEffect(() => {
+    const handleThemeChange = (e) => {
+      const nextTheme = e.detail;
+      if (nextTheme && (nextTheme === 'dark' || nextTheme === 'light')) {
+        setTheme(prev => (prev !== nextTheme ? nextTheme : prev));
+      }
+    };
+    window.addEventListener('theme-change', handleThemeChange);
+    return () => {
+      window.removeEventListener('theme-change', handleThemeChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setUser(null);
+      setIsAuthenticated(false);
+    };
+    const handleStorageChange = (e) => {
+      if (e.key === 'token' && !e.newValue) {
+        handleSessionExpired();
+      }
+    };
+    window.addEventListener('auth-session-expired', handleSessionExpired);
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('auth-session-expired', handleSessionExpired);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
+
+  const handleToggleTheme = (explicitNextTheme) => {
+    const current = document.documentElement.getAttribute('data-theme') || theme || 'dark';
+    const next = typeof explicitNextTheme === 'string'
+      ? explicitNextTheme
+      : (current === 'dark' ? 'light' : 'dark');
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+    setTheme(next);
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('theme-change', { detail: next }));
+    }, 0);
   };
 
   const handleLogin = (token, userData) => {
@@ -607,48 +699,102 @@ function App() {
     setIsAuthenticated(false);
   };
 
+  const defaultAuthenticatedRoute = isSystemAdmin ? '/admin' : '/dashboard';
+
   return (
     <Router>
-      {!isAuthenticated ? (
-        <Routes>
-          <Route path="/join" element={<JoinRoute onLogin={handleLogin} />} />
-          <Route path="/login" element={<Login onLogin={handleLogin} />} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      ) : (
-        <div style={{ display: 'flex', width: '100%', minHeight: '100vh' }}>
-          {showInvitePanel && (
-            <InvitePanel user={user} onClose={() => setShowInvitePanel(false)} />
-          )}
-          <Sidebar
-            onLogout={handleLogout}
-            user={user}
-            theme={theme}
-            onToggleTheme={handleToggleTheme}
-            onOpenInvite={() => setShowInvitePanel(true)}
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/" element={<Landing isAuthenticated={isAuthenticated} />} />
+        <Route
+          path="/login"
+          element={
+            isAuthenticated ? (
+              <Navigate to={defaultAuthenticatedRoute} replace />
+            ) : (
+              <Login onLogin={handleLogin} defaultRegister={false} />
+            )
+          }
+        />
+        <Route
+          path="/register"
+          element={
+            isAuthenticated ? (
+              <Navigate to={defaultAuthenticatedRoute} replace />
+            ) : (
+              <Login onLogin={handleLogin} defaultRegister={true} />
+            )
+          }
+        />
+        <Route path="/join" element={<JoinRoute onLogin={handleLogin} />} />
+
+        {/* Protected System Admin Routes */}
+        {isSystemAdmin && (
+          <Route
+            path="/admin/*"
+            element={
+              <AdminThemeProvider>
+                <AdminLayout user={user} onLogout={handleLogout}>
+                  <Routes>
+                    <Route path="" element={<AdminDashboard />} />
+                    <Route path="businesses" element={<AdminBusinesses />} />
+                    <Route path="users" element={<AdminUsers />} />
+                    <Route path="datasets" element={<AdminDatasets />} />
+                    <Route path="analysis-history" element={<AdminAnalysisHistory />} />
+                    <Route path="evaluations" element={<AdminEvaluations />} />
+                    <Route path="audit-logs" element={<AdminAuditLogs />} />
+                    <Route path="settings" element={<AdminSettings />} />
+                    <Route path="profile" element={<AdminProfile user={user} onUpdateUser={setUser} />} />
+                    <Route path="*" element={<Navigate to="/admin" replace />} />
+                  </Routes>
+                </AdminLayout>
+              </AdminThemeProvider>
+            }
           />
-          <main className="main-content" style={{ paddingTop: '6rem' }}>
-            {/* Notification Bell — top right of main content area */}
-            <div style={{
-              position: 'fixed', top: '1.25rem', right: '1.5rem',
-              zIndex: 500, display: 'flex', alignItems: 'center', gap: '0.5rem'
-            }}>
-              <NotificationBell user={user} onLogin={handleLogin} />
-            </div>
-            <Routes>
-              <Route path="/" element={isAdmin ? <ActivityLog /> : <Dashboard />} />
-              <Route path="/analytics" element={!isAdmin ? <Analytics /> : <Navigate to="/" replace />} />
-              <Route path="/evaluation" element={user?.role === 'shop_admin' ? <Evaluation /> : <Navigate to="/" replace />} />
-              <Route path="/history" element={!isAdmin ? <Dataset /> : <Navigate to="/" replace />} />
-              <Route path="/data" element={<Navigate to="/history" replace />} />
-              <Route path="/audit-log" element={<Navigate to="/" replace />} />
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/profile" element={<Profile user={user} />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </main>
-        </div>
-      )}
+        )}
+
+        {/* Protected Merchant / User Routes */}
+        {isAuthenticated && !isSystemAdmin && (
+          <Route
+            path="/*"
+            element={
+              <UserLayout
+                user={user}
+                theme={theme}
+                onToggleTheme={handleToggleTheme}
+                onLogout={handleLogout}
+                onLogin={handleLogin}
+                onOpenInvite={() => setShowInvitePanel(true)}
+              >
+                {showInvitePanel && (
+                  <InvitePanel user={user} onClose={() => setShowInvitePanel(false)} />
+                )}
+                <Routes>
+                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/analytics" element={<Analytics />} />
+                  <Route path="/evaluation" element={<Evaluation />} />
+                  <Route path="/history" element={<Dataset />} />
+                  <Route path="/data" element={<Navigate to="/history" replace />} />
+                  <Route path="/audit-log" element={<Navigate to="/dashboard" replace />} />
+                  <Route path="/settings" element={<SettingsPage user={user} theme={theme} onThemeChange={setTheme} />} />
+                  <Route path="/profile" element={<Profile user={user} />} />
+                  <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                </Routes>
+              </UserLayout>
+            }
+          />
+        )}
+
+        {/* Catch-all for unauthenticated access to any protected route */}
+        {!isAuthenticated && (
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        )}
+
+        {/* Catch-all for authenticated users */}
+        {isAuthenticated && (
+          <Route path="*" element={<Navigate to={defaultAuthenticatedRoute} replace />} />
+        )}
+      </Routes>
     </Router>
   );
 }

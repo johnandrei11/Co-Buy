@@ -32,8 +32,7 @@ import {
   LineChart,
   Line
 } from 'recharts';
-
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../config/api';
 
 const Evaluation = () => {
   const location = useLocation();
@@ -133,9 +132,16 @@ const Evaluation = () => {
   const fetchEvaluationData = async () => {
     setLoadingLogs(true);
     try {
+      const token = localStorage.getItem('token') || '';
+      const userEmail = localStorage.getItem('userEmail') || '';
+      const headers = {
+        'Authorization': token ? (token.startsWith('Bearer ') ? token : `Bearer ${token}`) : '',
+        'X-User-Email': userEmail
+      };
+
       const [logsRes, datasetsRes] = await Promise.allSettled([
-        axios.get(`${API_BASE}/activity-logs`),
-        axios.get(`${API_BASE}/datasets`)
+        axios.get(`${API_BASE}/activity-logs`, { headers }),
+        axios.get(`${API_BASE}/datasets?all=true`, { headers })
       ]);
 
       let logsList = [];
@@ -148,41 +154,66 @@ const Evaluation = () => {
         datasetsList = datasetsRes.value.data.datasets;
       }
 
+      const existingDatasetIds = new Set(datasetsList.map(ds => String(ds.id)));
       const mergedList = [];
       const seenDatasetIds = new Set();
 
+      // Only include activity logs for datasets that still exist in the database (not deleted)
       logsList.forEach(log => {
         const dsId = log.details?.dataset_id;
-        if (dsId) seenDatasetIds.add(String(dsId));
-        mergedList.push({
-          id: log.id,
-          dataset_id: dsId,
-          timestamp: log.created_at,
-          user_name: log.user_name || log.user_email || 'Shop Administrator',
-          user_email: log.user_email || 'admin@store.com',
-          filename: log.details?.filename || 'transaction_data.csv',
-          transaction_count: log.details?.transaction_count || 0,
-          market_type: log.details?.market_type || 'Default',
-          details: log.details
-        });
+        if (dsId && existingDatasetIds.has(String(dsId))) {
+          seenDatasetIds.add(String(dsId));
+          const matchingDs = datasetsList.find(d => String(d.id) === String(dsId));
+          const marketType = log.details?.market_type || matchingDs?.market_type || 'General Store';
+          const txCount = log.details?.transaction_count || matchingDs?.transaction_count || 0;
+          const uniqueItems = log.details?.unique_items || matchingDs?.unique_items || 0;
+          const algUsed = log.details?.algorithm || log.details?.algorithm_used || matchingDs?.algorithm || (txCount < 30 && txCount > 0 ? 'Apriori' : 'FP-Growth');
+          mergedList.push({
+            id: log.id,
+            dataset_id: dsId,
+            timestamp: log.created_at,
+            user_name: log.user_name || log.user_email || 'Shop Administrator',
+            user_email: log.user_email || 'admin@store.com',
+            filename: log.details?.filename || matchingDs?.name || 'transaction_data.csv',
+            transaction_count: txCount,
+            unique_items: uniqueItems,
+            market_type: marketType,
+            algorithm: algUsed,
+            details: {
+              ...(log.details || {}),
+              market_type: marketType,
+              algorithm: algUsed,
+              transaction_count: txCount,
+              unique_items: uniqueItems
+            }
+          });
+        }
       });
 
       datasetsList.forEach(ds => {
         if (!seenDatasetIds.has(String(ds.id))) {
+          const ownerEmail = ds.user_email || 'admin@store.com';
+          const ownerName = ds.user_name || (ownerEmail === 'admin@store.com' ? 'Store Administrator' : ownerEmail);
+          const marketType = ds.market_type || 'General Store';
+          const txCount = ds.transaction_count || 0;
+          const algUsed = ds.algorithm || (txCount < 30 && txCount > 0 ? 'Apriori' : 'FP-Growth');
           mergedList.push({
             id: `ds-${ds.id}`,
             dataset_id: ds.id,
             timestamp: ds.upload_date || new Date().toISOString(),
-            user_name: 'Store Administrator',
-            user_email: 'admin@store.com',
+            user_name: ownerName,
+            user_email: ownerEmail,
             filename: ds.name,
-            transaction_count: ds.transaction_count || 0,
-            market_type: ds.market_type || 'Default',
+            transaction_count: txCount,
+            unique_items: ds.unique_items || 0,
+            market_type: marketType,
+            algorithm: algUsed,
             details: {
               filename: ds.name,
-              transaction_count: ds.transaction_count,
+              transaction_count: txCount,
               unique_items: ds.unique_items,
-              market_type: ds.market_type,
+              market_type: marketType,
+              algorithm: algUsed,
               dataset_id: ds.id
             }
           });
@@ -200,7 +231,14 @@ const Evaluation = () => {
         } else {
           setActiveDatasetId(mergedList[0].dataset_id);
           setActiveDatasetName(mergedList[0].filename);
+          localStorage.setItem('activeDatasetId', mergedList[0].dataset_id);
+          localStorage.setItem('activeDatasetName', mergedList[0].filename);
         }
+      } else {
+        setActiveDatasetId(null);
+        setActiveDatasetName(null);
+        localStorage.removeItem('activeDatasetId');
+        localStorage.removeItem('activeDatasetName');
       }
     } catch (err) {
       console.error("Error fetching evaluation data:", err);
@@ -329,6 +367,278 @@ const Evaluation = () => {
       return `${Math.max(1, Math.round(seconds * 1000))} ms`;
     }
     return `${seconds.toFixed(2)}s`;
+  };
+
+  const renderMarketTypeBadge = (marketType) => {
+    const type = (marketType && marketType !== 'Default/unknown') ? marketType : 'General Store';
+    let icon = '📦';
+    let color = '#a78bfa';
+    let bg = 'rgba(167, 139, 250, 0.12)';
+    let border = 'rgba(167, 139, 250, 0.25)';
+
+    const lower = type.toLowerCase();
+    if (lower.includes('grocery') || lower.includes('supermarket')) {
+      icon = '🛒';
+      color = '#10b981';
+      bg = 'rgba(16, 185, 129, 0.12)';
+      border = 'rgba(16, 185, 129, 0.25)';
+    } else if (lower.includes('retail') || lower.includes('fashion') || lower.includes('clothing')) {
+      icon = '🛍️';
+      color = '#ec4899';
+      bg = 'rgba(236, 72, 153, 0.12)';
+      border = 'rgba(236, 72, 153, 0.25)';
+    } else if (lower.includes('electronic') || lower.includes('tech') || lower.includes('gadget')) {
+      icon = '⚡';
+      color = '#3b82f6';
+      bg = 'rgba(59, 130, 246, 0.12)';
+      border = 'rgba(59, 130, 246, 0.25)';
+    } else if (lower.includes('food') || lower.includes('restaurant') || lower.includes('cafe') || lower.includes('fast food')) {
+      icon = '🍔';
+      color = '#f59e0b';
+      bg = 'rgba(245, 158, 11, 0.12)';
+      border = 'rgba(245, 158, 11, 0.25)';
+    }
+
+    return (
+      <span style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '0.35rem',
+        padding: '0.25rem 0.65rem',
+        borderRadius: '20px',
+        fontSize: '0.75rem',
+        fontWeight: 700,
+        color: color,
+        background: bg,
+        border: `1px solid ${border}`,
+        whiteSpace: 'nowrap',
+        fontFamily: 'var(--font-mono)'
+      }}>
+        <span>{icon}</span>
+        {type}
+      </span>
+    );
+  };
+
+  const renderAlgorithmBadge = (algName, dsId = null, txCount = 0) => {
+    let name = 'FP-Growth';
+    let isFp = true;
+
+    // If active benchmark result exists for this dataset, pick the winning/recommended algorithm
+    if (results && String(activeDatasetId) === String(dsId)) {
+      const isFpWinner = results.fpgrowth.avg_time < results.apriori.avg_time;
+      name = isFpWinner ? 'FP-Growth' : 'Apriori';
+      isFp = isFpWinner;
+    } else if (algName && algName !== 'Apriori & FP-Growth') {
+      const lower = String(algName).toLowerCase();
+      if (lower.includes('apriori') && !lower.includes('fp')) {
+        name = 'Apriori';
+        isFp = false;
+      } else if (lower.includes('fp') || lower.includes('growth')) {
+        name = 'FP-Growth';
+        isFp = true;
+      } else {
+        name = algName;
+      }
+    } else if (txCount > 0 && txCount < 30) {
+      name = 'Apriori';
+      isFp = false;
+    }
+
+    if (isFp) {
+      return (
+        <span style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '0.35rem',
+          padding: '0.25rem 0.65rem',
+          borderRadius: '20px',
+          fontSize: '0.75rem',
+          fontWeight: 700,
+          color: '#10b981',
+          background: 'rgba(16, 185, 129, 0.12)',
+          border: '1px solid rgba(16, 185, 129, 0.25)',
+          whiteSpace: 'nowrap',
+          fontFamily: 'var(--font-mono)'
+        }} title="FP-Growth algorithm (Fast pattern mining without candidate generation)">
+          <Zap size={12} />
+          {name}
+        </span>
+      );
+    } else {
+      return (
+        <span style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '0.35rem',
+          padding: '0.25rem 0.65rem',
+          borderRadius: '20px',
+          fontSize: '0.75rem',
+          fontWeight: 700,
+          color: '#6366f1',
+          background: 'rgba(99, 102, 241, 0.12)',
+          border: '1px solid rgba(99, 102, 241, 0.25)',
+          whiteSpace: 'nowrap',
+          fontFamily: 'var(--font-mono)'
+        }} title="Apriori algorithm (Iterative candidate generation)">
+          <Cpu size={12} />
+          {name}
+        </span>
+      );
+    }
+  };
+
+  const renderTransactionAlgorithmTable = (res) => {
+    if (!res) return null;
+    const currentActiveDs = uploadLogs.find(l => String(l.dataset_id) === String(activeDatasetId)) || {};
+    const dsName = activeDatasetName || currentActiveDs.filename || 'Selected Transaction Dataset';
+    const marketType = res?.adaptive_thresholds?.market_type || currentActiveDs.market_type || 'General Store';
+    const txCount = currentActiveDs.transaction_count || 0;
+    const uniqueItems = currentActiveDs.unique_items || 0;
+
+    const isFpWinner = res.fpgrowth.avg_time < res.apriori.avg_time;
+    const speedRatio = isFpWinner
+      ? (res.apriori.avg_time / Math.max(res.fpgrowth.avg_time, 0.0001))
+      : (res.fpgrowth.avg_time / Math.max(res.apriori.avg_time, 0.0001));
+
+    const isFpMemWinner = res.fpgrowth.avg_mem < res.apriori.avg_mem;
+    const memSavingsPct = isFpMemWinner
+      ? (((res.apriori.avg_mem - res.fpgrowth.avg_mem) / Math.max(res.apriori.avg_mem, 0.0001)) * 100)
+      : (((res.fpgrowth.avg_mem - res.apriori.avg_mem) / Math.max(res.fpgrowth.avg_mem, 0.0001)) * 100);
+
+    return (
+      <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: '1.5rem', border: '1px solid var(--border-color)' }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '1.25rem 1.5rem',
+          borderBottom: '1px solid var(--border-color)',
+          background: 'var(--card-bg)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: '10px',
+              background: 'rgba(99, 102, 241, 0.12)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--primary-color)'
+            }}>
+              <Cpu size={20} />
+            </div>
+            <div>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '800', margin: 0, color: 'var(--text-main)' }}>
+                Data Transaction Algorithm Breakdown Table
+              </h3>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                Benchmarking algorithms used for data transaction pattern mining on <strong>{dsName}</strong>
+              </span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {renderMarketTypeBadge(marketType)}
+          </div>
+        </div>
+
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: 'var(--table-header-bg)', borderBottom: '1px solid var(--border-color)' }}>
+                <th style={{ padding: '0.875rem 1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Transaction Data</th>
+                <th style={{ padding: '0.875rem 1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Transaction Type</th>
+                <th style={{ padding: '0.875rem 1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Algorithm</th>
+                <th style={{ padding: '0.875rem 1rem', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Avg Execution Time</th>
+                <th style={{ padding: '0.875rem 1rem', textAlign: 'right', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Peak Memory</th>
+                <th style={{ padding: '0.875rem 1rem', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Performance Gap</th>
+                <th style={{ padding: '0.875rem 1rem', textAlign: 'center', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Evaluation Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* Apriori Row */}
+              <tr style={{ borderBottom: '1px solid var(--border-color)', background: 'var(--table-bg)' }}>
+                <td style={{ padding: '0.875rem 1rem' }}>
+                  <div style={{ fontWeight: '700', color: 'var(--text-main)', fontSize: '0.88rem' }}>{dsName}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>
+                    {txCount > 0 ? `${txCount.toLocaleString()} txns` : 'Batch Data'} {uniqueItems > 0 ? `• ${uniqueItems} items` : ''}
+                  </div>
+                </td>
+                <td style={{ padding: '0.875rem 1rem' }}>
+                  {renderMarketTypeBadge(marketType)}
+                </td>
+                <td style={{ padding: '0.875rem 1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: '700', color: '#6366f1', fontSize: '0.85rem' }}>
+                    <Cpu size={14} /> Apriori Algorithm
+                  </div>
+                </td>
+                <td style={{ padding: '0.875rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--text-main)' }}>
+                  {formatTime(res.apriori.avg_time)}
+                </td>
+                <td style={{ padding: '0.875rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--text-main)' }}>
+                  {res.apriori.avg_mem.toFixed(2)} MB
+                </td>
+                <td style={{ padding: '0.875rem 1rem', textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Baseline Scan
+                </td>
+                <td style={{ padding: '0.875rem 1rem', textAlign: 'center' }}>
+                  {!isFpWinner ? (
+                    <span style={{ padding: '0.25rem 0.65rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700, color: '#10b981', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.25)' }}>
+                      🏆 Preferred
+                    </span>
+                  ) : (
+                    <span style={{ padding: '0.25rem 0.65rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)' }}>
+                      Standard
+                    </span>
+                  )}
+                </td>
+              </tr>
+
+              {/* FP-Growth Row */}
+              <tr style={{ background: 'transparent' }}>
+                <td style={{ padding: '0.875rem 1rem' }}>
+                  <div style={{ fontWeight: '700', color: 'var(--text-main)', fontSize: '0.88rem' }}>{dsName}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>
+                    {txCount > 0 ? `${txCount.toLocaleString()} txns` : 'Batch Data'} {uniqueItems > 0 ? `• ${uniqueItems} items` : ''}
+                  </div>
+                </td>
+                <td style={{ padding: '0.875rem 1rem' }}>
+                  {renderMarketTypeBadge(marketType)}
+                </td>
+                <td style={{ padding: '0.875rem 1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: '700', color: '#10b981', fontSize: '0.85rem' }}>
+                    <Zap size={14} /> FP-Growth Algorithm
+                  </div>
+                </td>
+                <td style={{ padding: '0.875rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: '#10b981', fontWeight: '700' }}>
+                  {formatTime(res.fpgrowth.avg_time)}
+                </td>
+                <td style={{ padding: '0.875rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: '#10b981', fontWeight: '700' }}>
+                  {res.fpgrowth.avg_mem.toFixed(2)} MB
+                </td>
+                <td style={{ padding: '0.875rem 1rem', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.78rem', fontWeight: '700', color: '#10b981' }}>
+                    {speedRatio.toFixed(1)}x Faster
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                    {memSavingsPct.toFixed(0)}% less RAM
+                  </div>
+                </td>
+                <td style={{ padding: '0.875rem 1rem', textAlign: 'center' }}>
+                  {isFpWinner ? (
+                    <span style={{ padding: '0.25rem 0.65rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700, color: '#10b981', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.25)' }}>
+                      🏆 Preferred
+                    </span>
+                  ) : (
+                    <span style={{ padding: '0.25rem 0.65rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)' }}>
+                      Standard
+                    </span>
+                  )}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
   };
 
   const renderVerdictCard = (res) => {
@@ -888,15 +1198,16 @@ const Evaluation = () => {
                 <th style={{ padding: '0.875rem 1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><User size={13} /> User</div>
                 </th>
-                <th style={{ padding: '0.875rem 1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Action</th>
-                <th style={{ padding: '0.875rem 1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Summary</th>
+                <th style={{ padding: '0.875rem 1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Transaction Data</th>
+                <th style={{ padding: '0.875rem 1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Transaction Type</th>
+                <th style={{ padding: '0.875rem 1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Algorithm</th>
                 <th style={{ padding: '0.875rem 1rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Evaluation</th>
               </tr>
             </thead>
             <tbody>
               {loadingLogs ? (
                 <tr>
-                  <td colSpan={6} style={{ padding: '4rem', textAlign: 'center' }}>
+                  <td colSpan={7} style={{ padding: '4rem', textAlign: 'center' }}>
                     <div className="spin" style={{
                       width: 28, height: 28, borderRadius: '50%',
                       border: '2px solid var(--border-color)',
@@ -908,7 +1219,7 @@ const Evaluation = () => {
                 </tr>
               ) : uploadLogs.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={7} style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                     <Database size={36} style={{ marginBottom: '0.75rem', color: 'var(--text-dim)' }} />
                     <p style={{ fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.3rem' }}>No data uploads logged yet</p>
                     <p style={{ fontSize: '0.83rem', color: 'var(--text-muted)' }}>Upload files via Analytics or File History to begin running evaluation benchmarks.</p>
@@ -951,29 +1262,19 @@ const Evaluation = () => {
                             {item.user_email}
                           </div>
                         </td>
-                        <td style={{ padding: '0.875rem 1rem' }}>
-                          <span style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.35rem',
-                            padding: '0.25rem 0.65rem',
-                            borderRadius: '20px',
-                            fontSize: '0.75rem',
-                            fontWeight: 700,
-                            color: '#3b82f6',
-                            background: 'rgba(59, 130, 246, 0.12)',
-                            border: '1px solid rgba(59, 130, 246, 0.25)',
-                            whiteSpace: 'nowrap',
-                            fontFamily: 'var(--font-mono)'
-                          }}>
-                            <Upload size={12} />
-                            Data Upload
-                          </span>
-                        </td>
                         <td style={{ padding: '0.875rem 1rem', fontSize: '0.83rem', color: 'var(--text-muted)' }}>
-                          <div style={{ maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <div style={{ fontWeight: 600, color: 'var(--text-main)', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {item.filename}
                           </div>
+                          <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>
+                            {item.transaction_count ? `${item.transaction_count.toLocaleString()} txns` : 'Data Batch'}
+                          </div>
+                        </td>
+                        <td style={{ padding: '0.875rem 1rem' }}>
+                          {renderMarketTypeBadge(item.market_type)}
+                        </td>
+                        <td style={{ padding: '0.875rem 1rem' }}>
+                          {renderAlgorithmBadge(item.algorithm)}
                         </td>
                         <td style={{ padding: '0.875rem 1rem' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -1056,7 +1357,7 @@ const Evaluation = () => {
                       </tr>
                       {isExpanded && item.details && (
                         <tr style={{ background: isEven ? 'var(--table-bg)' : 'transparent', borderBottom: '1px solid var(--border-color)' }}>
-                          <td colSpan={6} style={{ padding: '0 1.25rem 1rem' }}>
+                          <td colSpan={7} style={{ padding: '0 1.25rem 1rem' }}>
                             <div style={{
                               background: 'var(--table-header-bg)',
                               border: '1px solid var(--border-color)',
@@ -1152,6 +1453,9 @@ const Evaluation = () => {
 
               {/* Top Statistics Cards */}
               {renderStatsGrid(results)}
+
+              {/* Data Transaction & Algorithm Breakdown Table */}
+              {renderTransactionAlgorithmTable(results)}
 
               {/* View Toggle Tabs */}
               <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: '0.5rem', gap: '1.5rem' }}>

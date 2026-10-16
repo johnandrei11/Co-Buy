@@ -1,12 +1,39 @@
 import sqlite3
 import os
+import datetime
+import json
+import logging
+logger = logging.getLogger('cobuy_db')
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database.db')
+def resolve_db_path():
+    env_path = os.environ.get('DATABASE_PATH')
+    if env_path:
+        db_dir = os.path.dirname(env_path)
+        if db_dir:
+            try:
+                os.makedirs(db_dir, exist_ok=True)
+                test_file = os.path.join(db_dir, '.write_test')
+                with open(test_file, 'w') as f:
+                    f.write('1')
+                os.remove(test_file)
+                return env_path
+            except Exception as e:
+                logger.warning("DATABASE_PATH '%s' is not writable (%s). Using local database path.", env_path, e)
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database.db')
+
+DB_PATH = resolve_db_path()
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
+    db_dir = os.path.dirname(DB_PATH)
+    if db_dir and not os.path.exists(db_dir):
+        try:
+            os.makedirs(db_dir, exist_ok=True)
+        except Exception:
+            pass
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
     return conn
 
 def init_db():
@@ -22,6 +49,22 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    cursor.execute("PRAGMA table_info(stores)")
+    store_cols = [col[1] for col in cursor.fetchall()]
+    for col_name, col_def in [
+        ('business_type',    "ALTER TABLE stores ADD COLUMN business_type TEXT DEFAULT 'Retail'"),
+        ('status',           "ALTER TABLE stores ADD COLUMN status TEXT DEFAULT 'Active'"),
+        ('address',          "ALTER TABLE stores ADD COLUMN address TEXT DEFAULT ''"),
+        ('contact_phone',    "ALTER TABLE stores ADD COLUMN contact_phone TEXT DEFAULT ''"),
+        ('approved_at',      "ALTER TABLE stores ADD COLUMN approved_at TIMESTAMP DEFAULT NULL"),
+        ('approved_by',      "ALTER TABLE stores ADD COLUMN approved_by TEXT DEFAULT NULL"),
+        ('rejection_reason', "ALTER TABLE stores ADD COLUMN rejection_reason TEXT DEFAULT NULL"),
+    ]:
+        if col_name not in store_cols:
+            try:
+                cursor.execute(col_def)
+            except sqlite3.OperationalError:
+                pass
 
     # users (base)
     cursor.execute('''
@@ -38,9 +81,15 @@ def init_db():
     user_columns = [col[1] for col in cursor.fetchall()]
 
     for col_name, col_def in [
-        ('account_type', "ALTER TABLE users ADD COLUMN account_type TEXT DEFAULT 'admin'"),
-        ('store_id',     "ALTER TABLE users ADD COLUMN store_id INTEGER REFERENCES stores(id)"),
-        ('status',       "ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active'"),
+        ('account_type',     "ALTER TABLE users ADD COLUMN account_type TEXT DEFAULT 'admin'"),
+        ('store_id',         "ALTER TABLE users ADD COLUMN store_id INTEGER REFERENCES stores(id)"),
+        ('status',           "ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active'"),
+        ('failed_attempts', "ALTER TABLE users ADD COLUMN failed_attempts INTEGER DEFAULT 0"),
+        ('lockout_level',    "ALTER TABLE users ADD COLUMN lockout_level INTEGER DEFAULT 0"),
+        ('locked_until',     "ALTER TABLE users ADD COLUMN locked_until TEXT"),
+        ('last_failed_login', "ALTER TABLE users ADD COLUMN last_failed_login TEXT"),
+        ('account_status',   "ALTER TABLE users ADD COLUMN account_status TEXT DEFAULT 'ACTIVE'"),
+        ('created_at',       "ALTER TABLE users ADD COLUMN created_at TIMESTAMP DEFAULT NULL"),
     ]:
         if col_name not in user_columns:
             try:
@@ -125,6 +174,19 @@ def init_db():
         )
     ''')
 
+    # activity_logs migrations
+    cursor.execute("PRAGMA table_info(activity_logs)")
+    act_columns = [col[1] for col in cursor.fetchall()]
+    for col_name, col_def in [
+        ('status',     "ALTER TABLE activity_logs ADD COLUMN status TEXT DEFAULT 'Success'"),
+        ('ip_address', "ALTER TABLE activity_logs ADD COLUMN ip_address TEXT DEFAULT NULL"),
+    ]:
+        if col_name not in act_columns:
+            try:
+                cursor.execute(col_def)
+            except sqlite3.OperationalError:
+                pass
+
     # datasets
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS datasets (
@@ -146,12 +208,57 @@ def init_db():
         ('market_type',     "ALTER TABLE datasets ADD COLUMN market_type TEXT DEFAULT 'Default/unknown'"),
         ('basket_avg',      "ALTER TABLE datasets ADD COLUMN basket_avg REAL DEFAULT NULL"),
         ('date_range_days', "ALTER TABLE datasets ADD COLUMN date_range_days INTEGER DEFAULT NULL"),
+        ('missing_count',   "ALTER TABLE datasets ADD COLUMN missing_count INTEGER DEFAULT 0"),
+        ('duplicates_count', "ALTER TABLE datasets ADD COLUMN duplicates_count INTEGER DEFAULT 0"),
+        ('columns_detected', "ALTER TABLE datasets ADD COLUMN columns_detected TEXT DEFAULT NULL"),
+        ('business_id',     "ALTER TABLE datasets ADD COLUMN business_id INTEGER REFERENCES stores(id)"),
+        ('status',          "ALTER TABLE datasets ADD COLUMN status TEXT DEFAULT 'Processed'"),
+        ('size_bytes',      "ALTER TABLE datasets ADD COLUMN size_bytes INTEGER DEFAULT 0"),
     ]:
         if col_name not in ds_columns:
             try:
                 cursor.execute(col_def)
             except sqlite3.OperationalError:
                 pass
+
+    # Backfill datasets business_id from user's store_id if missing
+    try:
+        cursor.execute("""
+            UPDATE datasets
+            SET business_id = (SELECT store_id FROM users WHERE users.email = datasets.user_email)
+            WHERE business_id IS NULL AND user_email IS NOT NULL
+        """)
+    except sqlite3.OperationalError:
+        pass
+
+    # analyses
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS analyses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            business_id INTEGER REFERENCES stores(id) ON DELETE CASCADE,
+            dataset_id INTEGER REFERENCES datasets(id) ON DELETE CASCADE,
+            user_email TEXT REFERENCES users(email) ON DELETE CASCADE,
+            algorithm TEXT NOT NULL,
+            parameters TEXT NOT NULL,
+            execution_time REAL NOT NULL,
+            status TEXT DEFAULT 'Completed',
+            rules_count INTEGER DEFAULT 0,
+            frequent_itemsets_count INTEGER DEFAULT 0,
+            results_summary TEXT DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # system_settings
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS system_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            category TEXT NOT NULL,
+            updated_by TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
 
     # products
     cursor.execute('''
@@ -193,26 +300,129 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             transaction_id INTEGER NOT NULL,
             item TEXT NOT NULL,
+            category TEXT DEFAULT 'Uncategorized',
+            quantity INTEGER DEFAULT 1,
             FOREIGN KEY (transaction_id) REFERENCES transactions (id) ON DELETE CASCADE
         )
     ''')
+    cursor.execute("PRAGMA table_info(transaction_items)")
+    ti_columns = [col[1] for col in cursor.fetchall()]
+    for col_name, col_def in [
+        ('category', "ALTER TABLE transaction_items ADD COLUMN category TEXT DEFAULT 'Uncategorized'"),
+        ('quantity', "ALTER TABLE transaction_items ADD COLUMN quantity INTEGER DEFAULT 1"),
+    ]:
+        if col_name not in ti_columns:
+            try:
+                cursor.execute(col_def)
+            except sqlite3.OperationalError:
+                pass
 
     # indexes
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_datasets_user ON datasets(user_email)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_datasets_business ON datasets(business_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_transactions_user_dataset ON transactions(user_email, dataset_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_transaction_items_tx ON transaction_items(transaction_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_transaction_items_item ON transaction_items(item)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_transaction_items_category ON transaction_items(category)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_activity_logs_store ON activity_logs(store_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_invitations_token ON invitations(token)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_transactions_dataset_date ON transactions(dataset_id, created_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_analyses_business ON analyses(business_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_analyses_dataset ON analyses(dataset_id)")
 
-    # seed admin
-    cursor.execute('SELECT * FROM users WHERE email = ?', ('admin@ruleminer.ai',))
+    # seed or update System Admin
+    for admin_email in ['admin@ruleminer.ai', 'admin@cobuy.com']:
+        cursor.execute('SELECT * FROM users WHERE email = ?', (admin_email,))
+        row = cursor.fetchone()
+        if not row:
+            cursor.execute(
+                'INSERT INTO users (email, password, name, role, account_type, status) VALUES (?, ?, ?, ?, ?, ?)',
+                (admin_email, 'password123', 'System Admin', 'system_admin', 'system_admin', 'active')
+            )
+        else:
+            cursor.execute(
+                "UPDATE users SET password = 'password123', role = 'system_admin', account_type = 'system_admin', name = 'System Admin', status = 'active', failed_attempts = 0, locked_until = NULL WHERE email = ?",
+                (admin_email,)
+            )
+
+    # Seed default shop admin (Jane Smith - But First Coffee)
+    cursor.execute("SELECT id FROM stores WHERE name = 'But First Coffee'")
+    store_row = cursor.fetchone()
+    if not store_row:
+        cursor.execute(
+            "INSERT INTO stores (name, owner_email, business_type, status) VALUES (?, ?, ?, ?)",
+            ('But First Coffee', 'janesmith@gmail.com', 'Retail', 'Active')
+        )
+        store_id = cursor.lastrowid
+    else:
+        store_id = store_row[0]
+
+    cursor.execute('SELECT * FROM users WHERE email = ?', ('janesmith@gmail.com',))
     if not cursor.fetchone():
         cursor.execute(
-            'INSERT INTO users (email, password, name, role, account_type, status) VALUES (?, ?, ?, ?, ?, ?)',
-            ('admin@ruleminer.ai', 'password123', 'Admin User', 'shop_admin', 'admin', 'active')
+            'INSERT INTO users (email, password, name, role, account_type, store_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            ('janesmith@gmail.com', 'password123', 'Jane Smith', 'shop_admin', 'admin', store_id, 'active')
         )
+    else:
+        cursor.execute(
+            "UPDATE users SET password = 'password123', role = 'shop_admin', account_type = 'admin', store_id = ?, status = 'active', failed_attempts = 0, locked_until = NULL WHERE email = 'janesmith@gmail.com'",
+            (store_id,)
+        )
+
+    # Seed default system settings
+    default_settings = [
+        ('system_name', 'CoBuy Rule Mining System', 'general'),
+        ('system_description', 'Intelligent Market Basket Analysis & Association Mining Platform', 'general'),
+        ('default_language', 'English', 'general'),
+        ('timezone', 'UTC+08:00', 'general'),
+        ('default_algorithm', 'auto', 'analysis'),
+        ('default_min_support', '0.05', 'analysis'),
+        ('default_min_confidence', '0.50', 'analysis'),
+        ('default_min_lift', '1.0', 'analysis'),
+        ('max_dataset_size_mb', '50', 'data'),
+        ('allowed_file_types', '.csv, .xlsx, .xls', 'data'),
+        ('data_retention_days', '365', 'data'),
+        ('session_timeout_minutes', '120', 'security'),
+        ('min_password_length', '6', 'security'),
+        ('require_special_char', 'false', 'security')
+    ]
+    for k, v, cat in default_settings:
+        cursor.execute("INSERT OR IGNORE INTO system_settings (key, value, category) VALUES (?, ?, ?)", (k, v, cat))
+
+    # Migrate legacy defaults to standard documentation parameters
+    cursor.execute("UPDATE system_settings SET value = '0.05' WHERE key = 'default_min_support' AND (value = '0.01' OR value = '0.010')")
+    cursor.execute("UPDATE system_settings SET value = '0.50' WHERE key = 'default_min_confidence' AND (value = '0.20' OR value = '0.2')")
+
+    # Seed reference businesses to match visual direction if needed
+    ref_businesses = [
+        ('Blue Foot Coffee', 'Retail / Cafe', 'bluefoot@ruleminer.ai', 'Active', '102 Market St, Suite 4', '+1-555-0192'),
+        ('Happy Paws Supply', 'Pet Food & Care', 'happypaws@ruleminer.ai', 'Active', '405 Greenway Ave', '+1-555-0143'),
+        ('QuickMart', 'Convenience Store', 'quickmart@ruleminer.ai', 'Active', '88 Terminal Blvd', '+1-555-0188'),
+        ('Fresh Basket', 'Grocery & Produce', 'freshbasket@ruleminer.ai', 'Active', '12 Farmers Lane', '+1-555-0177'),
+        ('Urban Bites', 'Food & Restaurant', 'urbanbites@ruleminer.ai', 'Active', '77 Skyline Plaza', '+1-555-0165'),
+        ('Bean & Brew Artisans', 'Coffee Shop', 'pending_cafe@test.com', 'Pending Approval', '55 Heritage Way', '+1-555-0122')
+    ]
+    for b_name, b_type, b_email, b_status, b_addr, b_phone in ref_businesses:
+        cursor.execute("SELECT id FROM stores WHERE name = ?", (b_name,))
+        existing_store = cursor.fetchone()
+        if not existing_store:
+            cursor.execute(
+                """INSERT INTO stores (name, owner_email, business_type, status, address, contact_phone, created_at) 
+                   VALUES (?, ?, ?, ?, ?, ?, datetime('now', '-15 days'))""",
+                (b_name, b_email, b_type, b_status, b_addr, b_phone)
+            )
+            store_id = cursor.lastrowid
+            # create corresponding user if not present
+            cursor.execute("SELECT email FROM users WHERE email = ?", (b_email,))
+            if not cursor.fetchone():
+                u_role = 'business_admin'
+                u_status = 'pending_approval' if b_status == 'Pending Approval' else 'active'
+                cursor.execute(
+                    """INSERT INTO users (email, password, name, role, account_type, store_id, status)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (b_email, 'password123', f"{b_name} Manager", u_role, 'admin', store_id, u_status)
+                )
 
     conn.commit()
     conn.close()
@@ -252,6 +462,119 @@ def update_user_role(email, role):
     conn.execute('UPDATE users SET role = ? WHERE email = ?', (role, email))
     conn.commit()
     conn.close()
+
+def get_user_lockout_info(email):
+    user = get_user(email)
+    if not user:
+        return None
+    
+    failed_attempts = user.get('failed_attempts') or 0
+    lockout_level = user.get('lockout_level') or 0
+    locked_until_str = user.get('locked_until')
+    account_status = user.get('account_status') or 'ACTIVE'
+    
+    is_locked = False
+    remaining_seconds = 0
+    
+    if locked_until_str:
+        try:
+            locked_until_dt = datetime.datetime.fromisoformat(locked_until_str.replace('Z', '+00:00'))
+            now_dt = datetime.datetime.now(datetime.timezone.utc)
+            if locked_until_dt > now_dt:
+                is_locked = True
+                remaining_seconds = int((locked_until_dt - now_dt).total_seconds())
+        except Exception:
+            pass
+
+    return {
+        'failed_attempts': failed_attempts,
+        'lockout_level': lockout_level,
+        'locked_until': locked_until_str,
+        'account_status': 'LOCKED' if is_locked else 'ACTIVE',
+        'is_locked': is_locked,
+        'remaining_seconds': max(0, remaining_seconds)
+    }
+
+def record_failed_login(email):
+    conn = get_db_connection()
+    user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+    if not user:
+        conn.close()
+        return None
+    
+    user_dict = dict(user)
+    failed_attempts = (user_dict.get('failed_attempts') or 0) + 1
+    lockout_level = user_dict.get('lockout_level') or 0
+    locked_until_str = user_dict.get('locked_until')
+    
+    now_dt = datetime.datetime.now(datetime.timezone.utc)
+    now_str = now_dt.isoformat()
+    
+    had_previous_lockout = False
+    if locked_until_str:
+        try:
+            prev_locked_until = datetime.datetime.fromisoformat(locked_until_str.replace('Z', '+00:00'))
+            if now_dt >= prev_locked_until:
+                had_previous_lockout = True
+        except Exception:
+            pass
+
+    if failed_attempts >= 3 or had_previous_lockout:
+        lockout_level = max(1, lockout_level + 1)
+        duration_minutes = min(1440, 10 * (2 ** (lockout_level - 1)))
+        locked_until_dt = now_dt + datetime.timedelta(minutes=duration_minutes)
+        locked_until_str = locked_until_dt.isoformat()
+        failed_attempts = 3
+        account_status = 'LOCKED'
+        
+        conn.execute('''
+            UPDATE users 
+            SET failed_attempts = ?, lockout_level = ?, locked_until = ?, last_failed_login = ?, account_status = ?
+            WHERE email = ?
+        ''', (failed_attempts, lockout_level, locked_until_str, now_str, account_status, email))
+        conn.commit()
+        conn.close()
+        
+        remaining_seconds = duration_minutes * 60
+        return {
+            'is_locked': True,
+            'failed_attempts': failed_attempts,
+            'lockout_level': lockout_level,
+            'lockout_duration_minutes': duration_minutes,
+            'locked_until': locked_until_str,
+            'remaining_seconds': remaining_seconds,
+            'message': f'Too many failed attempts. Your account is locked for {duration_minutes} minutes.'
+        }
+    else:
+        attempts_remaining = 3 - failed_attempts
+        conn.execute('''
+            UPDATE users
+            SET failed_attempts = ?, last_failed_login = ?
+            WHERE email = ?
+        ''', (failed_attempts, now_str, email))
+        conn.commit()
+        conn.close()
+        
+        return {
+            'is_locked': False,
+            'failed_attempts': failed_attempts,
+            'attempts_remaining': attempts_remaining,
+            'message': f'Incorrect password. You have {attempts_remaining} more attempt{"s" if attempts_remaining > 1 else ""} before the account is temporarily locked.'
+        }
+
+def reset_user_lockout(email):
+    conn = get_db_connection()
+    conn.execute('''
+        UPDATE users
+        SET failed_attempts = 0, lockout_level = 0, locked_until = NULL, account_status = 'ACTIVE'
+        WHERE email = ?
+    ''', (email,))
+    conn.commit()
+    conn.close()
+
+def unlock_user_account(email):
+    reset_user_lockout(email)
+    return True
 
 # ── Store helpers ─────────────────────────────────────────────────────────────
 
@@ -472,14 +795,14 @@ def get_unread_notification_count(user_email):
 
 # ── Activity Log helpers ──────────────────────────────────────────────────────
 
-def log_activity(store_id, user_email, action, details_dict=None):
+def log_activity(store_id, user_email, action, details_dict=None, status='Success', ip_address=None):
     import json
     details_json = json.dumps(details_dict) if details_dict else None
     conn = get_db_connection()
     try:
         conn.execute(
-            'INSERT INTO activity_logs (store_id, user_email, action, details) VALUES (?, ?, ?, ?)',
-            (store_id, user_email, action, details_json)
+            'INSERT INTO activity_logs (store_id, user_email, action, details, status, ip_address) VALUES (?, ?, ?, ?, ?, ?)',
+            (store_id, user_email, action, details_json, status, ip_address)
         )
         conn.commit()
     except Exception:
@@ -530,6 +853,15 @@ def get_store_users_for_filter(store_id):
 
 # ── Transaction helpers ───────────────────────────────────────────────────────
 
+def verify_dataset_ownership(dataset_id, user_email):
+    """Verify that dataset exists and belongs to user_email."""
+    if not dataset_id or not user_email:
+        return None
+    conn = get_db_connection()
+    row = conn.execute('SELECT * FROM datasets WHERE id = ? AND user_email = ?', (dataset_id, user_email)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
 def get_transactions(user_email=None, dataset_id=None):
     conn = get_db_connection()
     query = 'SELECT t.id, ti.item FROM transactions t JOIN transaction_items ti ON t.id = ti.transaction_id'
@@ -537,8 +869,8 @@ def get_transactions(user_email=None, dataset_id=None):
     if dataset_id:
         conditions.append("t.dataset_id = ?")
         params.append(dataset_id)
-    elif user_email:
-        conditions.append("(t.user_email = ? OR t.user_email IS NULL)")
+    if user_email:
+        conditions.append("t.user_email = ?")
         params.append(user_email)
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
@@ -562,8 +894,8 @@ def get_transaction_basket_values(user_email=None, dataset_id=None):
     if dataset_id:
         conditions.append("t.dataset_id = ?")
         params.append(dataset_id)
-    elif user_email:
-        conditions.append("(t.user_email = ? OR t.user_email IS NULL)")
+    if user_email:
+        conditions.append("t.user_email = ?")
         params.append(user_email)
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
@@ -581,8 +913,8 @@ def get_transactions_with_dates(user_email=None, dataset_id=None):
     if dataset_id:
         conditions.append("t.dataset_id = ?")
         params.append(dataset_id)
-    elif user_email:
-        conditions.append("(t.user_email = ? OR t.user_email IS NULL)")
+    if user_email:
+        conditions.append("t.user_email = ?")
         params.append(user_email)
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
@@ -600,6 +932,40 @@ def get_transactions_with_dates(user_email=None, dataset_id=None):
     return [transactions_map[k] for k in sorted(transactions_map.keys())]
 
 
+
+def get_transaction_dates_aggregated(user_email=None, dataset_id=None):
+    conn = get_db_connection()
+    query = "SELECT substr(created_at, 1, 10) as dt, COUNT(*) as cnt FROM transactions"
+    conditions, params = [], []
+    if dataset_id:
+        conditions.append("dataset_id = ?")
+        params.append(dataset_id)
+    if user_email:
+        conditions.append("user_email = ?")
+        params.append(user_email)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " GROUP BY dt ORDER BY dt"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [{'date': r['dt'], 'count': r['cnt']} for r in rows if r['dt']]
+
+def get_distinct_dates_for_dataset(user_email=None, dataset_id=None):
+    conn = get_db_connection()
+    query = "SELECT DISTINCT substr(created_at, 1, 10) as dt FROM transactions"
+    conditions, params = [], []
+    if dataset_id:
+        conditions.append("dataset_id = ?")
+        params.append(dataset_id)
+    if user_email:
+        conditions.append("user_email = ?")
+        params.append(user_email)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY dt"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [r['dt'] for r in rows if r['dt']]
 
 def clear_transactions(user_email=None, dataset_id=None):
     conn = get_db_connection()
@@ -634,18 +1000,74 @@ def add_transaction(items, user_email=None, dataset_id=None):
         conn.close()
     return tx_id
 
-def add_transactions(list_of_items, dataset_id=None, user_email=None, basket_values=None):
+def add_transactions(list_of_items, dataset_id=None, user_email=None, basket_values=None, dates=None, item_details=None):
+    if not list_of_items:
+        return
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        all_items = list(set(item for sublist in list_of_items for item in sublist))
-        for item in all_items:
-            cursor.execute('INSERT OR IGNORE INTO products (name) VALUES (?)', (item,))
+        # 1. Batch insert unique products in a single operation
+        all_items = list(set(item for sublist in list_of_items for item in sublist if item))
+        if all_items:
+            cursor.executemany('INSERT OR IGNORE INTO products (name) VALUES (?)', [(item,) for item in all_items])
+
+        # 2. Batch update product categories once for the unique product set (not in a loop)
+        cat_updates = {}
+        if item_details:
+            for basket in item_details:
+                if basket:
+                    for d in basket:
+                        it_name = d.get('item')
+                        it_cat = (d.get('category') or '').strip()
+                        if it_name and it_cat and it_cat.lower() != 'uncategorized':
+                            cat_updates[it_name] = it_cat
+        if cat_updates:
+            cursor.executemany('''
+                INSERT INTO products (name, category) VALUES (?, ?)
+                ON CONFLICT(name) DO UPDATE SET category = excluded.category
+                WHERE products.category IS NULL OR products.category = 'Uncategorized' OR excluded.category != 'Uncategorized'
+            ''', [(name, cat) for name, cat in cat_updates.items()])
+
+        # 3. Precompute sequential transaction IDs for fast batch insertion
+        cursor.execute('SELECT COALESCE(MAX(id), 0) FROM transactions')
+        start_id = cursor.fetchone()[0]
+
+        tx_rows = []
+        item_rows = []
+
         for i, items in enumerate(list_of_items):
-            bv = float(basket_values[i]) if basket_values and i < len(basket_values) else None
-            cursor.execute('INSERT INTO transactions (dataset_id, user_email, basket_value) VALUES (?, ?, ?)', (dataset_id, user_email, bv))
-            tx_id = cursor.lastrowid
-            cursor.executemany('INSERT INTO transaction_items (transaction_id, item) VALUES (?, ?)', [(tx_id, item) for item in items])
+            tx_id = start_id + 1 + i
+            bv = float(basket_values[i]) if basket_values and i < len(basket_values) and basket_values[i] is not None else None
+            dt = dates[i] if dates and i < len(dates) and dates[i] else None
+            tx_rows.append((tx_id, dataset_id, user_email, bv, dt))
+
+            if item_details and i < len(item_details) and item_details[i]:
+                for d in item_details[i]:
+                    it = d.get('item', '')
+                    if it:
+                        cat = (d.get('category') or 'Uncategorized').strip() or 'Uncategorized'
+                        qty = int(d.get('quantity', 1) or 1)
+                        item_rows.append((tx_id, it, cat, qty))
+            else:
+                for item in items:
+                    if item:
+                        item_rows.append((tx_id, item, 'Uncategorized', 1))
+
+        # 4. Bulk insert transactions in 500-row chunks
+        CHUNK_SIZE = 500
+        for i in range(0, len(tx_rows), CHUNK_SIZE):
+            cursor.executemany(
+                'INSERT INTO transactions (id, dataset_id, user_email, basket_value, created_at) VALUES (?, ?, ?, ?, ?)',
+                tx_rows[i:i + CHUNK_SIZE]
+            )
+
+        # 5. Bulk insert transaction items in 500-row chunks
+        for i in range(0, len(item_rows), CHUNK_SIZE):
+            cursor.executemany(
+                'INSERT INTO transaction_items (transaction_id, item, category, quantity) VALUES (?, ?, ?, ?)',
+                item_rows[i:i + CHUNK_SIZE]
+            )
+
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -653,12 +1075,97 @@ def add_transactions(list_of_items, dataset_id=None, user_email=None, basket_val
     finally:
         conn.close()
 
+def get_categories_for_dataset(dataset_id=None, user_email=None):
+    """Dynamically get unique categories from the uploaded dataset."""
+    conn = get_db_connection()
+    query = '''
+        SELECT DISTINCT ti.category 
+        FROM transaction_items ti 
+        JOIN transactions t ON ti.transaction_id = t.id
+    '''
+    conditions, params = [], []
+    if dataset_id:
+        conditions.append("t.dataset_id = ?")
+        params.append(dataset_id)
+    if user_email:
+        conditions.append("t.user_email = ?")
+        params.append(user_email)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY ti.category ASC"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    
+    seen = set()
+    categories = []
+    for r in rows:
+        cat = (r['category'] or '').strip()
+        if cat and cat.lower() != 'uncategorized' and cat not in seen:
+            seen.add(cat)
+            categories.append(cat)
+    return sorted(categories, key=lambda c: c.lower())
+
+def get_product_categories_for_dataset(dataset_id=None, user_email=None):
+    """Dynamically get product-to-category mapping from the uploaded dataset."""
+    conn = get_db_connection()
+    query = '''
+        SELECT ti.item, ti.category, COUNT(*) as cnt
+        FROM transaction_items ti 
+        JOIN transactions t ON ti.transaction_id = t.id
+    '''
+    conditions, params = [], []
+    if dataset_id:
+        conditions.append("t.dataset_id = ?")
+        params.append(dataset_id)
+    if user_email:
+        conditions.append("t.user_email = ?")
+        params.append(user_email)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " GROUP BY ti.item, ti.category ORDER BY cnt DESC"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    
+    cat_map = {}
+    for r in rows:
+        item = r['item']
+        cat = (r['category'] or '').strip()
+        if item and item not in cat_map:
+            cat_map[item] = cat if cat else 'Uncategorized'
+    return cat_map
+
 def get_datasets(user_email=None):
     conn = get_db_connection()
     if user_email:
-        rows = conn.execute('SELECT * FROM datasets WHERE user_email = ? ORDER BY upload_date DESC, id DESC', (user_email,)).fetchall()
+        rows = conn.execute('''
+            SELECT d.*, u.name as user_name 
+            FROM datasets d 
+            LEFT JOIN users u ON d.user_email = u.email 
+            WHERE d.user_email = ? 
+            ORDER BY d.upload_date DESC, d.id DESC
+        ''', (user_email,)).fetchall()
     else:
-        rows = conn.execute('SELECT * FROM datasets ORDER BY upload_date DESC, id DESC').fetchall()
+        rows = conn.execute('''
+            SELECT d.*, u.name as user_name 
+            FROM datasets d 
+            LEFT JOIN users u ON d.user_email = u.email 
+            ORDER BY d.upload_date DESC, d.id DESC
+        ''').fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+# Alias for backward compatibility
+get_user_datasets = get_datasets
+
+def get_datasets_by_store(store_id):
+    conn = get_db_connection()
+    rows = conn.execute('''
+        SELECT d.*, u.name as user_name 
+        FROM datasets d 
+        LEFT JOIN users u ON d.user_email = u.email 
+        WHERE u.store_id = ? OR d.user_email IN (SELECT owner_email FROM stores WHERE id = ?)
+        ORDER BY d.upload_date DESC, d.id DESC
+    ''', (store_id, store_id)).fetchall()
     conn.close()
     return [dict(row) for row in rows]
 
@@ -672,12 +1179,14 @@ def get_dataset_by_id(dataset_id, user_email=None):
     return dict(row) if row else None
 
 def add_dataset(name, transaction_count, unique_items, user_email=None, file_hash=None,
-                market_type='Default/unknown', basket_avg=None, date_range_days=None):
+                market_type='Default/unknown', basket_avg=None, date_range_days=None,
+                missing_count=0, duplicates_count=0, columns_detected=None):
     conn = get_db_connection()
     cursor = conn.cursor()
+    cols_json = json.dumps(columns_detected) if columns_detected and isinstance(columns_detected, (list, dict)) else columns_detected
     cursor.execute(
-        'INSERT INTO datasets (name, user_email, file_hash, market_type, transaction_count, unique_items, basket_avg, date_range_days) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        (name, user_email, file_hash, market_type, transaction_count, unique_items, basket_avg, date_range_days)
+        'INSERT INTO datasets (name, user_email, file_hash, market_type, transaction_count, unique_items, basket_avg, date_range_days, missing_count, duplicates_count, columns_detected) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        (name, user_email, file_hash, market_type, transaction_count, unique_items, basket_avg, date_range_days, missing_count, duplicates_count, cols_json)
     )
     ds_id = cursor.lastrowid
     conn.commit()
@@ -719,13 +1228,37 @@ def cleanup_duplicate_datasets(user_email=None):
 
 def delete_dataset(dataset_id, user_email=None):
     conn = get_db_connection()
+    cursor = conn.cursor()
     if user_email:
-        conn.execute('DELETE FROM datasets WHERE id = ? AND user_email = ?', (dataset_id, user_email))
+        cursor.execute('DELETE FROM datasets WHERE id = ? AND user_email = ?', (dataset_id, user_email))
     else:
-        conn.execute('DELETE FROM datasets WHERE id = ?', (dataset_id,))
+        cursor.execute('DELETE FROM datasets WHERE id = ?', (dataset_id,))
+    deleted = cursor.rowcount > 0
     conn.commit()
     conn.close()
-    return True
+    return deleted
+
+def get_products_for_user(user_email=None):
+    conn = get_db_connection()
+    if user_email:
+        rows = conn.execute('''
+            SELECT DISTINCT ti.item as name, COUNT(DISTINCT t.id) as tx_count
+            FROM transaction_items ti
+            JOIN transactions t ON ti.transaction_id = t.id
+            WHERE t.user_email = ?
+            GROUP BY ti.item
+            ORDER BY tx_count DESC, ti.item ASC
+        ''', (user_email,)).fetchall()
+    else:
+        rows = conn.execute('''
+            SELECT DISTINCT ti.item as name, COUNT(DISTINCT t.id) as tx_count
+            FROM transaction_items ti
+            JOIN transactions t ON ti.transaction_id = t.id
+            GROUP BY ti.item
+            ORDER BY tx_count DESC, ti.item ASC
+        ''').fetchall()
+    conn.close()
+    return [{'id': idx + 1, 'name': row['name'], 'count': row['tx_count']} for idx, row in enumerate(rows)]
 
 def get_products():
     conn = get_db_connection()
@@ -753,3 +1286,529 @@ def add_product(name, category='Uncategorized', price=0.0, stock=0):
     finally:
         conn.close()
     return success
+
+# ── System Admin Data Access Helpers ──────────────────────────────────────────
+
+def get_all_businesses(search=None, type_filter=None, status_filter=None, limit=50, offset=0):
+    conn = get_db_connection()
+    query = """
+        SELECT s.*, 
+            (SELECT COUNT(*) FROM users u WHERE u.store_id = s.id) as users_count,
+            (SELECT COUNT(*) FROM datasets d WHERE d.business_id = s.id) as datasets_count,
+            (SELECT COUNT(*) FROM analyses a WHERE a.business_id = s.id) as analyses_count,
+            (SELECT u.name FROM users u WHERE u.email = s.owner_email LIMIT 1) as owner_name
+        FROM stores s
+    """
+    conditions, params = [], []
+    if search:
+        conditions.append("(s.name LIKE ? OR s.owner_email LIKE ? OR s.business_type LIKE ?)")
+        term = f"%{search}%"
+        params.extend([term, term, term])
+    if type_filter and type_filter != 'all':
+        conditions.append("s.business_type = ?")
+        params.append(type_filter)
+    if status_filter and status_filter != 'all':
+        if ',' in status_filter:
+            statuses = [s.strip() for s in status_filter.split(',') if s.strip()]
+            placeholders = ','.join(['?'] * len(statuses))
+            conditions.append(f"s.status IN ({placeholders})")
+            params.extend(statuses)
+        elif status_filter in ('Inactive', 'Inactive / Rejected', 'inactive', 'inactive_rejected'):
+            conditions.append("s.status IN ('Inactive', 'Rejected')")
+        else:
+            conditions.append("s.status = ?")
+            params.append(status_filter)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY s.id DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+    rows = conn.execute(query, params).fetchall()
+    
+    cnt_query = "SELECT COUNT(*) FROM stores s"
+    if conditions:
+        cnt_query += " WHERE " + " AND ".join(conditions)
+    total = conn.execute(cnt_query, params[:-2]).fetchone()[0]
+    conn.close()
+    return [dict(r) for r in rows], total
+
+def get_business_counts():
+    conn = get_db_connection()
+    total = conn.execute("SELECT COUNT(*) FROM stores").fetchone()[0]
+    active = conn.execute("SELECT COUNT(*) FROM stores WHERE status = 'Active'").fetchone()[0]
+    pending = conn.execute("SELECT COUNT(*) FROM stores WHERE status = 'Pending Approval'").fetchone()[0]
+    inactive = conn.execute("SELECT COUNT(*) FROM stores WHERE status IN ('Inactive', 'Rejected')").fetchone()[0]
+    conn.close()
+    return {'total': total, 'active': active, 'pending': pending, 'inactive': inactive}
+
+def get_business_by_id(business_id):
+    conn = get_db_connection()
+    row = conn.execute("""
+        SELECT s.*,
+            (SELECT COUNT(*) FROM users u WHERE u.store_id = s.id) as users_count,
+            (SELECT COUNT(*) FROM datasets d WHERE d.business_id = s.id) as datasets_count,
+            (SELECT COUNT(*) FROM analyses a WHERE a.business_id = s.id) as analyses_count,
+            (SELECT u.name FROM users u WHERE u.email = s.owner_email LIMIT 1) as owner_name
+        FROM stores s WHERE s.id = ?
+    """, (business_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def create_business(name, owner_email, business_type='Retail', address='', contact_phone='', status='Active', approved_by=None):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO stores (name, owner_email, business_type, status, address, contact_phone, approved_by, approved_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'Active' THEN CURRENT_TIMESTAMP ELSE NULL END)
+    """, (name, owner_email, business_type, status, address, contact_phone, approved_by, status))
+    business_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return business_id
+
+def update_business(business_id, name=None, business_type=None, address=None, contact_phone=None, status=None):
+    conn = get_db_connection()
+    fields, params = [], []
+    if name is not None:
+        fields.append("name = ?")
+        params.append(name)
+    if business_type is not None:
+        fields.append("business_type = ?")
+        params.append(business_type)
+    if address is not None:
+        fields.append("address = ?")
+        params.append(address)
+    if contact_phone is not None:
+        fields.append("contact_phone = ?")
+        params.append(contact_phone)
+    if status is not None:
+        fields.append("status = ?")
+        params.append(status)
+    if not fields:
+        conn.close()
+        return True
+    params.append(business_id)
+    conn.execute(f"UPDATE stores SET {', '.join(fields)} WHERE id = ?", params)
+    conn.commit()
+    conn.close()
+    return True
+
+def approve_business(business_id, approved_by):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE stores
+        SET status = 'Active', approved_at = CURRENT_TIMESTAMP, approved_by = ?, rejection_reason = NULL
+        WHERE id = ?
+    """, (approved_by, business_id))
+    cursor.execute("""
+        UPDATE users
+        SET status = 'active', role = CASE WHEN role = 'team_member' THEN 'business_admin' ELSE role END
+        WHERE store_id = ? AND status = 'pending_approval'
+    """, (business_id,))
+    conn.commit()
+    conn.close()
+    return True
+
+def reject_business(business_id, rejected_by, reason=None):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE stores
+        SET status = 'Rejected', approved_by = ?, rejection_reason = ?
+        WHERE id = ?
+    """, (rejected_by, reason or 'Application did not meet registration criteria.', business_id))
+    cursor.execute("""
+        UPDATE users
+        SET status = 'rejected'
+        WHERE store_id = ?
+    """, (business_id,))
+    conn.commit()
+    conn.close()
+    return True
+
+def get_business_users(business_id):
+    conn = get_db_connection()
+    rows = conn.execute("SELECT email, name, role, account_type, status, created_at FROM users WHERE store_id = ? ORDER BY name", (business_id,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_business_datasets(business_id):
+    conn = get_db_connection()
+    rows = conn.execute("SELECT * FROM datasets WHERE business_id = ? ORDER BY id DESC", (business_id,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_business_analyses(business_id):
+    conn = get_db_connection()
+    rows = conn.execute("""
+        SELECT a.*, d.name as dataset_name 
+        FROM analyses a 
+        LEFT JOIN datasets d ON a.dataset_id = d.id 
+        WHERE a.business_id = ? 
+        ORDER BY a.id DESC
+    """, (business_id,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_business_activity(business_id, limit=50):
+    conn = get_db_connection()
+    rows = conn.execute("""
+        SELECT id, user_email, action, details, status, ip_address, created_at 
+        FROM activity_logs 
+        WHERE store_id = ? 
+        ORDER BY id DESC LIMIT ?
+    """, (business_id, limit)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_all_users_admin(search=None, business_id=None, role=None, status=None, limit=100, offset=0):
+    conn = get_db_connection()
+    query = """
+        SELECT u.email, u.name, u.role, u.account_type, u.status, u.store_id, s.name as business_name
+        FROM users u
+        LEFT JOIN stores s ON u.store_id = s.id
+    """
+    conditions, params = [], []
+    if search:
+        conditions.append("(u.name LIKE ? OR u.email LIKE ? OR s.name LIKE ?)")
+        term = f"%{search}%"
+        params.extend([term, term, term])
+    if business_id and business_id != 'all':
+        conditions.append("u.store_id = ?")
+        params.append(business_id)
+    if role and role != 'all':
+        if role == 'business_admin':
+            conditions.append("u.role IN ('business_admin', 'shop_admin')")
+        elif role == 'staff':
+            conditions.append("u.role IN ('staff', 'team_member')")
+        else:
+            conditions.append("u.role = ?")
+            params.append(role)
+    if status and status != 'all':
+        conditions.append("u.status = ?")
+        params.append(status)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY u.email ASC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+    rows = conn.execute(query, params).fetchall()
+
+    cnt_query = "SELECT COUNT(*) FROM users u LEFT JOIN stores s ON u.store_id = s.id"
+    if conditions:
+        cnt_query += " WHERE " + " AND ".join(conditions)
+    total = conn.execute(cnt_query, params[:-2]).fetchone()[0]
+    conn.close()
+    return [dict(r) for r in rows], total
+
+def create_user_admin(email, password, name, role='business_admin', store_id=None, status='active'):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            'INSERT INTO users (email, password, name, role, account_type, store_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            (email.lower().strip(), password, name, role, 'admin' if 'admin' in role else 'member', store_id, status)
+        )
+        conn.commit()
+        success = True
+    except sqlite3.IntegrityError:
+        success = False
+    conn.close()
+    return success
+
+def update_user_admin(email, name=None, role=None, store_id=None, status=None):
+    conn = get_db_connection()
+    fields, params = [], []
+    if name is not None:
+        fields.append("name = ?")
+        params.append(name)
+    if role is not None:
+        fields.append("role = ?")
+        params.append(role)
+        fields.append("account_type = ?")
+        params.append('admin' if 'admin' in role else 'member')
+    if store_id is not None:
+        fields.append("store_id = ?")
+        params.append(store_id if store_id != 0 else None)
+    if status is not None:
+        fields.append("status = ?")
+        params.append(status)
+    if not fields:
+        conn.close()
+        return True
+    params.append(email.lower().strip())
+    conn.execute(f"UPDATE users SET {', '.join(fields)} WHERE email = ?", params)
+    conn.commit()
+    conn.close()
+    return True
+
+def reset_user_password(email, new_password):
+    conn = get_db_connection()
+    conn.execute("UPDATE users SET password = ? WHERE email = ?", (new_password, email.lower().strip()))
+    conn.commit()
+    conn.close()
+    return True
+
+def get_all_datasets_admin(search=None, business_id=None, status=None, limit=100):
+    conn = get_db_connection()
+    query = """
+        SELECT d.*, s.name as business_name, s.id as business_id
+        FROM datasets d
+        LEFT JOIN stores s ON d.business_id = s.id
+    """
+    conditions, params = [], []
+    if search:
+        conditions.append("(d.name LIKE ? OR s.name LIKE ? OR d.user_email LIKE ?)")
+        term = f"%{search}%"
+        params.extend([term, term, term])
+    if business_id and business_id != 'all':
+        conditions.append("d.business_id = ?")
+        params.append(business_id)
+    if status and status != 'all':
+        conditions.append("d.status = ?")
+        params.append(status)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY d.id DESC LIMIT ?"
+    params.append(limit)
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_dataset_admin_details(dataset_id):
+    conn = get_db_connection()
+    row = conn.execute("""
+        SELECT d.*, s.name as business_name, s.business_type, s.id as business_id
+        FROM datasets d
+        LEFT JOIN stores s ON d.business_id = s.id
+        WHERE d.id = ?
+    """, (dataset_id,)).fetchone()
+    if not row:
+        conn.close()
+        return None
+    ds = dict(row)
+    analyses = conn.execute("SELECT * FROM analyses WHERE dataset_id = ? ORDER BY id DESC", (dataset_id,)).fetchall()
+    ds['analyses'] = [dict(a) for a in analyses]
+    conn.close()
+    return ds
+
+def create_analysis_record(business_id, dataset_id, user_email, algorithm, parameters, execution_time, status='Completed', rules_count=0, frequent_itemsets_count=0, results_summary=None):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO analyses (business_id, dataset_id, user_email, algorithm, parameters, execution_time, status, rules_count, frequent_itemsets_count, results_summary)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        business_id,
+        dataset_id,
+        user_email,
+        algorithm,
+        json.dumps(parameters) if isinstance(parameters, (dict, list)) else str(parameters),
+        execution_time,
+        status,
+        rules_count,
+        frequent_itemsets_count,
+        json.dumps(results_summary) if isinstance(results_summary, (dict, list)) else results_summary
+    ))
+    a_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return a_id
+
+def get_all_analyses_admin(search=None, business_id=None, algorithm=None, status=None, limit=100):
+    conn = get_db_connection()
+    query = """
+        SELECT a.*, s.name as business_name, d.name as dataset_name
+        FROM analyses a
+        LEFT JOIN stores s ON a.business_id = s.id
+        LEFT JOIN datasets d ON a.dataset_id = d.id
+    """
+    conditions, params = [], []
+    if search:
+        conditions.append("(s.name LIKE ? OR d.name LIKE ? OR a.user_email LIKE ? OR a.algorithm LIKE ?)")
+        term = f"%{search}%"
+        params.extend([term, term, term, term])
+    if business_id and business_id != 'all':
+        conditions.append("a.business_id = ?")
+        params.append(business_id)
+    if algorithm and algorithm != 'all':
+        conditions.append("a.algorithm LIKE ?")
+        params.append(f"%{algorithm}%")
+    if status and status != 'all':
+        conditions.append("a.status = ?")
+        params.append(status)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY a.id DESC LIMIT ?"
+    params.append(limit)
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_analysis_record(analysis_id):
+    conn = get_db_connection()
+    row = conn.execute("""
+        SELECT a.*, s.name as business_name, d.name as dataset_name, d.transaction_count, d.unique_items
+        FROM analyses a
+        LEFT JOIN stores s ON a.business_id = s.id
+        LEFT JOIN datasets d ON a.dataset_id = d.id
+        WHERE a.id = ?
+    """, (analysis_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def get_admin_dashboard_kpis():
+    conn = get_db_connection()
+    total_businesses = conn.execute("SELECT COUNT(*) FROM stores").fetchone()[0]
+    active_businesses = conn.execute("SELECT COUNT(*) FROM stores WHERE status = 'Active'").fetchone()[0]
+    pending_businesses = conn.execute("SELECT COUNT(*) FROM stores WHERE status = 'Pending Approval'").fetchone()[0]
+    total_users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    total_datasets = conn.execute("SELECT COUNT(*) FROM datasets").fetchone()[0]
+    total_analyses = conn.execute("SELECT COUNT(*) FROM analyses").fetchone()[0]
+    system_activity_count = conn.execute("SELECT COUNT(*) FROM activity_logs").fetchone()[0]
+
+    businesses = conn.execute("""
+        SELECT s.id, s.name, s.business_type as type, s.status,
+            (SELECT COUNT(*) FROM users u WHERE u.store_id = s.id) as users_count,
+            (SELECT COUNT(*) FROM datasets d WHERE d.business_id = s.id) as datasets_count,
+            (SELECT COUNT(*) FROM analyses a WHERE a.business_id = s.id) as analyses_count
+        FROM stores s
+        ORDER BY s.status = 'Active' DESC, s.id DESC
+        LIMIT 6
+    """).fetchall()
+
+    recent_activity = conn.execute("""
+        SELECT a.id, a.user_email, a.action, a.details, a.status, a.created_at,
+               s.name as business_name, u.name as user_name
+        FROM activity_logs a
+        LEFT JOIN stores s ON a.store_id = s.id
+        LEFT JOIN users u ON a.user_email = u.email
+        ORDER BY a.id DESC LIMIT 6
+    """).fetchall()
+
+    conn.close()
+    return {
+        'total_businesses': total_businesses,
+        'active_businesses': active_businesses,
+        'pending_businesses': pending_businesses,
+        'total_users': total_users,
+        'total_datasets': total_datasets,
+        'total_analyses': total_analyses,
+        'system_activity_count': system_activity_count,
+        'businesses_overview': [dict(b) for b in businesses],
+        'recent_activity': [dict(r) for r in recent_activity]
+    }
+
+def get_admin_system_activity_series(days=30):
+    conn = get_db_connection()
+    rows = conn.execute(f"""
+        SELECT substr(created_at, 1, 10) as dt,
+               SUM(CASE WHEN action LIKE '%LOGIN%' THEN 1 ELSE 0 END) as logins,
+               SUM(CASE WHEN action LIKE '%UPLOAD%' THEN 1 ELSE 0 END) as uploads,
+               SUM(CASE WHEN action LIKE '%ANALYSIS%' OR action LIKE '%MINE%' THEN 1 ELSE 0 END) as analyses,
+               SUM(CASE WHEN action NOT LIKE '%LOGIN%' AND action NOT LIKE '%UPLOAD%' AND action NOT LIKE '%ANALYSIS%' AND action NOT LIKE '%MINE%' THEN 1 ELSE 0 END) as user_actions,
+               COUNT(*) as total_activities
+        FROM activity_logs
+        WHERE created_at >= datetime('now', '-{days} days')
+        GROUP BY dt
+        ORDER BY dt ASC
+    """).fetchall()
+    conn.close()
+    
+    result = []
+    for r in rows:
+        result.append({
+            'date': r['dt'],
+            'logins': r['logins'] or 0,
+            'uploads': r['uploads'] or 0,
+            'analyses': r['analyses'] or 0,
+            'user_actions': r['user_actions'] or 0,
+            'total': r['total_activities'] or 0
+        })
+    return result
+
+def get_all_audit_logs(search=None, user_filter=None, business_filter=None, action_filter=None, status_filter=None, start_date=None, end_date=None, limit=100, offset=0):
+    conn = get_db_connection()
+    query = """
+        SELECT a.id, a.store_id, s.name as business_name, a.user_email, u.name as user_name,
+               a.action, a.details, a.status, a.ip_address, a.created_at
+        FROM activity_logs a
+        LEFT JOIN stores s ON a.store_id = s.id
+        LEFT JOIN users u ON a.user_email = u.email
+    """
+    conditions, params = [], []
+    if search:
+        conditions.append("(a.action LIKE ? OR a.details LIKE ? OR a.user_email LIKE ? OR s.name LIKE ?)")
+        term = f"%{search}%"
+        params.extend([term, term, term, term])
+    if user_filter and user_filter != 'all':
+        conditions.append("a.user_email = ?")
+        params.append(user_filter)
+    if business_filter and business_filter != 'all':
+        conditions.append("a.store_id = ?")
+        params.append(business_filter)
+    if action_filter and action_filter != 'all':
+        conditions.append("a.action LIKE ?")
+        params.append(f"%{action_filter}%")
+    if status_filter and status_filter != 'all':
+        conditions.append("a.status = ?")
+        params.append(status_filter)
+    if start_date:
+        conditions.append("substr(a.created_at, 1, 10) >= ?")
+        params.append(start_date)
+    if end_date:
+        conditions.append("substr(a.created_at, 1, 10) <= ?")
+        params.append(end_date)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY a.id DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+    rows = conn.execute(query, params).fetchall()
+
+    cnt_query = "SELECT COUNT(*) FROM activity_logs a LEFT JOIN stores s ON a.store_id = s.id"
+    if conditions:
+        cnt_query += " WHERE " + " AND ".join(conditions)
+    total = conn.execute(cnt_query, params[:-2]).fetchone()[0]
+    conn.close()
+    return [dict(r) for r in rows], total
+
+def get_system_settings():
+    conn = get_db_connection()
+    rows = conn.execute("SELECT * FROM system_settings ORDER BY category, key").fetchall()
+    conn.close()
+    result = {}
+    for r in rows:
+        cat = r['category']
+        if cat not in result:
+            result[cat] = {}
+        result[cat][r['key']] = r['value']
+
+    # Ensure standard documentation parameters for analysis if still set to legacy defaults
+    if 'analysis' not in result:
+        result['analysis'] = {}
+    if result['analysis'].get('default_min_support') in ('0.01', '0.010', None):
+        result['analysis']['default_min_support'] = '0.05'
+    if result['analysis'].get('default_min_confidence') in ('0.20', '0.2', None):
+        result['analysis']['default_min_confidence'] = '0.50'
+
+    return result
+
+get_all_businesses_admin = get_all_businesses
+
+def update_system_settings(settings_dict, updated_by=None):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    for key, val in settings_dict.items():
+        cursor.execute("SELECT category FROM system_settings WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        cat = row['category'] if row else 'general'
+        cursor.execute("""
+            INSERT INTO system_settings (key, value, category, updated_by, updated_at)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_by = excluded.updated_by,
+                updated_at = CURRENT_TIMESTAMP
+        """, (key, str(val), cat, updated_by))
+    conn.commit()
+    conn.close()
+    return True
