@@ -779,6 +779,20 @@ def unlock_account():
     db.unlock_user_account(email)
     return jsonify({'message': f'Account {email} has been unlocked successfully.'})
 
+@app.route('/api/admin/unlock-account', methods=['POST'])
+def unlock_account():
+    params = request.json or {}
+    email = params.get('email', '').strip().lower()
+    if not email:
+        return jsonify({'error': 'User email is required'}), 400
+
+    user = db.get_user(email)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    db.unlock_user_account(email)
+    return jsonify({'message': f'Account {email} has been unlocked successfully.'})
+
 @app.route('/api/register', methods=['POST'])
 def register():
     params = request.json or {}
@@ -1795,6 +1809,46 @@ def get_frequently_bought_together():
         'frequently_bought_together': results,
         'match_mode': 'exact' if exact_match_txs else 'partial',
         'matched_transactions': matched_tx_count
+    })
+
+@app.route('/api/frequently_bought_together', methods=['GET'])
+def get_frequently_bought_together():
+    selected_product = request.args.get('product')
+    dataset_id = request.args.get('dataset_id')
+    user_email = get_current_user_email()
+
+    if not selected_product:
+        return jsonify({
+            'selected_product': '',
+            'frequently_bought_together': []
+        })
+
+    transactions = db.get_transactions(user_email=user_email, dataset_id=dataset_id)
+    if transactions is None or len(transactions) == 0:
+        return jsonify({
+            'selected_product': selected_product,
+            'frequently_bought_together': []
+        })
+
+    co_counts = {}
+    target_clean = selected_product.strip()
+    
+    for tx in transactions:
+        tx_items = [str(item).strip() for item in tx if item]
+        if any(item.lower() == target_clean.lower() for item in tx_items):
+            distinct_others = set([item for item in tx_items if item.lower() != target_clean.lower()])
+            for other in distinct_others:
+                co_counts[other] = co_counts.get(other, 0) + 1
+
+    results = [
+        {'product_name': name, 'count': count}
+        for name, count in co_counts.items()
+    ]
+    results.sort(key=lambda x: (-x['count'], x['product_name'].lower()))
+
+    return jsonify({
+        'selected_product': selected_product,
+        'frequently_bought_together': results
     })
 
 @app.route('/api/add_transaction', methods=['POST'])

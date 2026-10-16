@@ -1199,9 +1199,15 @@ const Dashboard = () => {
                           offset: -16,
                           style: { fill: isDark ? '#f8fafc' : '#0f172a', fontSize: 12, fontWeight: 700 }
                         }}
+                        label={{
+                          value: 'Transaction Date',
+                          position: 'insideBottom',
+                          offset: -18,
+                          style: { fill: 'var(--text-main)', fontSize: 12, fontWeight: 700 }
+                        }}
                       />
                       <YAxis
-                        axisLine={false}
+                        axisLine={{ stroke: 'var(--border-color)', strokeWidth: 1.5 }}
                         tickLine={false}
                         tick={{ fill: isDark ? '#94a3b8' : '#64748b', fontSize: 11 }}
                         tickFormatter={(v) => v.toLocaleString()}
@@ -1245,6 +1251,24 @@ const Dashboard = () => {
                   </ResponsiveContainer>
                 )}
               </div>
+
+              {filteredTrends.length > 0 && (
+                <div style={{
+                  marginTop: '1rem',
+                  padding: '0.875rem 1.1rem',
+                  background: 'var(--inner-box-bg)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  fontSize: '0.83rem',
+                  color: 'var(--text-muted)',
+                  lineHeight: 1.5
+                }}>
+                  <strong style={{ color: 'var(--text-main)', display: 'block', marginBottom: '0.25rem' }}>
+                    💡 What this graph means for your store:
+                  </strong>
+                  Daily transaction volume ranges between <strong>{Math.min(...filteredTrends.map(t => t.count))}</strong> and <strong>{maxCount} receipts</strong> per day. The peak recorded volume occurred on <strong>{peakDay?.date}</strong> with <strong>{peakDay?.count} receipts</strong> (busiest day). Use these insights to optimize staff scheduling and inventory stocking for high-demand days.
+                </div>
+              )}
             </div>
 
             {/* Right Column: Key Insights */}
