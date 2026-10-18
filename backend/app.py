@@ -782,19 +782,6 @@ def unlock_account():
     db.unlock_user_account(email)
     return jsonify({'message': f'Account {email} has been unlocked successfully.'})
 
-@app.route('/api/admin/unlock-account', methods=['POST'])
-def unlock_account():
-    params = request.json or {}
-    email = params.get('email', '').strip().lower()
-    if not email:
-        return jsonify({'error': 'User email is required'}), 400
-
-    user = db.get_user(email)
-    if not user:
-        return jsonify({'error': 'User not found'}), 404
-
-    db.unlock_user_account(email)
-    return jsonify({'message': f'Account {email} has been unlocked successfully.'})
 
 @app.route('/api/register', methods=['POST'])
 def register():
@@ -1991,114 +1978,6 @@ def get_frequently_bought_together():
         }
     })
 
-@app.route('/api/frequently_bought_together', methods=['GET', 'POST'])
-def get_frequently_bought_together():
-    user_info, err = require_authenticated_user()
-    if err or not user_info:
-        return err[0] if err else jsonify({'error': 'Unauthorized'}), err[1] if err else 401
-    user_email = user_info['email']
-
-    dataset_id = request.args.get('dataset_id')
-    if request.is_json and request.json and not dataset_id:
-        dataset_id = request.json.get('dataset_id')
-
-    if dataset_id:
-        dataset_info, auth_err = authorize_dataset_access(dataset_id, user_info)
-        if auth_err or not dataset_info:
-            return auth_err[0] if auth_err else jsonify({'error': 'Forbidden'}), auth_err[1] if auth_err else 403
-
-    # Collect selected products from query params or JSON body
-    selected_products = []
-    if request.is_json and request.json:
-        p_val = request.json.get('products') or request.json.get('product')
-        if isinstance(p_val, list):
-            selected_products.extend([str(x).strip() for x in p_val if x and str(x).strip()])
-        elif isinstance(p_val, str) and p_val.strip():
-            selected_products.extend([x.strip() for x in p_val.split(',') if x.strip()])
-
-    for key in ['products', 'product']:
-        for val in request.args.getlist(key):
-            if val and val.strip():
-                if ',' in val:
-                    selected_products.extend([x.strip() for x in val.split(',') if x.strip()])
-                else:
-                    selected_products.append(val.strip())
-
-    # Deduplicate while preserving order
-    seen_p = set()
-    unique_selected = []
-    for p in selected_products:
-        p_clean = p.strip()
-        if p_clean and p_clean.lower() not in seen_p:
-            seen_p.add(p_clean.lower())
-            unique_selected.append(p_clean)
-    selected_products = unique_selected
-
-    if not selected_products:
-        return jsonify({
-            'selected_product': '',
-            'selected_products': [],
-            'frequently_bought_together': []
-        })
-
-    transactions = db.get_transactions(user_email=user_email, dataset_id=dataset_id)
-    if transactions is None or len(transactions) == 0:
-        return jsonify({
-            'selected_product': selected_products[0] if selected_products else '',
-            'selected_products': selected_products,
-            'frequently_bought_together': []
-        })
-
-    cat_map = db.get_product_categories_for_dataset(dataset_id=dataset_id, user_email=user_email)
-    target_clean_lower = {p.lower() for p in selected_products}
-    
-    # 1. Exact match transactions: contain ALL selected products
-    exact_match_txs = []
-    for tx in transactions:
-        tx_item_map = {str(item).strip().lower(): str(item).strip() for item in tx if item}
-        if target_clean_lower.issubset(set(tx_item_map.keys())):
-            exact_match_txs.append(tx_item_map)
-
-    co_counts = {}
-    if exact_match_txs:
-        # Transactions that contain the entire selected set
-        for tx_item_map in exact_match_txs:
-            for it_lower, orig_name in tx_item_map.items():
-                if it_lower not in target_clean_lower:
-                    co_counts[orig_name] = co_counts.get(orig_name, 0) + 1
-        matched_tx_count = len(exact_match_txs)
-    else:
-        # Partial match fallback if no single transaction has all selected items simultaneously
-        matched_tx_count = 0
-        for tx in transactions:
-            tx_item_map = {str(item).strip().lower(): str(item).strip() for item in tx if item}
-            overlap = target_clean_lower.intersection(set(tx_item_map.keys()))
-            if overlap:
-                matched_tx_count += 1
-                for it_lower, orig_name in tx_item_map.items():
-                    if it_lower not in target_clean_lower:
-                        co_counts[orig_name] = co_counts.get(orig_name, 0) + 1
-
-    results = [
-        {
-            'product_name': name,
-            'name': name,
-            'count': count,
-            'category': cat_map.get(name, 'Uncategorized'),
-            'percentage': round((count / matched_tx_count * 100), 1) if matched_tx_count > 0 else 0
-        }
-        for name, count in co_counts.items()
-    ]
-    # Full list exposed! No limit of 1 result!
-    results.sort(key=lambda x: (-x['count'], x['product_name'].lower()))
-
-    return jsonify({
-        'selected_product': selected_products[0] if selected_products else '',
-        'selected_products': selected_products,
-        'frequently_bought_together': results,
-        'match_mode': 'exact' if exact_match_txs else 'partial',
-        'matched_transactions': matched_tx_count
-    })
 
 @app.route('/api/add_transaction', methods=['POST'])
 def add_transaction():
