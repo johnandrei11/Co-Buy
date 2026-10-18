@@ -275,11 +275,13 @@ CACHE_STATS = {}
 CACHE_TRENDS = {}
 CACHE_MINE = {}
 CACHE_RECOMMENDATIONS_V2 = {}
+CACHE_TRANSACTION_MATRIX = {}
 
 def invalidate_dataset_cache(dataset_id=None):
-    global CACHE_STATS, CACHE_TRENDS, CACHE_MINE, CACHE_RECOMMENDATIONS_V2
+    global CACHE_STATS, CACHE_TRENDS, CACHE_MINE, CACHE_RECOMMENDATIONS_V2, CACHE_TRANSACTION_MATRIX
     if dataset_id:
         ds_key = str(dataset_id)
+        CACHE_TRANSACTION_MATRIX.pop(ds_key, None)
         for k in list(CACHE_STATS.keys()):
             if str(k[0]) == ds_key:
                 CACHE_STATS.pop(k, None)
@@ -297,6 +299,7 @@ def invalidate_dataset_cache(dataset_id=None):
         CACHE_TRENDS.clear()
         CACHE_MINE.clear()
         CACHE_RECOMMENDATIONS_V2.clear()
+        CACHE_TRANSACTION_MATRIX.clear()
 
 NOISE_KEYWORDS = {
     'postage', 'post', 'shipping', 'freight', 'delivery', 'delivery fee',
@@ -1007,7 +1010,16 @@ def mine_rules():
     user_email = user_info['email']
 
     params = request.json or {}
-    algorithm = params.get('algorithm', 'auto') # 'auto', 'apriori', or 'fpgrowth'
+    raw_algo = str(params.get('algorithm', 'auto')).strip().lower()
+    # ECLAT is removed per documentation requirements (only Apriori and FP-Growth are supported)
+    if raw_algo == 'eclat':
+        logger.warning("ECLAT requested but removed from documentation. Falling back to FP-Growth.")
+        algorithm = 'fpgrowth'
+    elif raw_algo in ('fpgrowth', 'apriori', 'auto'):
+        algorithm = raw_algo
+    else:
+        algorithm = 'auto'
+
     dataset_id = params.get('dataset_id') or request.args.get('dataset_id')
     if not dataset_id:
         return jsonify({'error': 'No dataset selected or active in analytics'}), 400
@@ -1016,149 +1028,225 @@ def mine_rules():
     if auth_err or not dataset_info:
         return auth_err[0] if auth_err else jsonify({'error': 'Forbidden'}), auth_err[1] if auth_err else 403
 
-    cache_key = (str(dataset_id), str(user_email), str(algorithm), str(params.get('min_support')), str(params.get('min_confidence')), str(params.get('min_lift')))
+    req_supp = params.get('min_support')
+    req_conf = params.get('min_confidence')
+    req_lift = params.get('min_lift')
+
+    cache_key = (str(dataset_id), str(user_email), str(algorithm), str(req_supp), str(req_conf), str(req_lift))
     cached = CACHE_MINE.get(cache_key)
     if cached and (time.time() - cached['time'] < 300):
         return jsonify(cached['data'])
 
-    transactions = db.get_transactions(user_email=user_email, dataset_id=dataset_id)
-    if transactions is None or len(transactions) == 0:
-        return jsonify({
-            'dataset_id': dataset_id,
-            'rules': [],
-            'frequent_itemsets': [],
-            'algorithm_used': algorithm,
-            'execution_time_seconds': 0.001,
-            'total_transactions': 0,
-            'is_empty': True,
-            'message': 'No association rules could be mined because the dataset contains 0 transactions.'
-        })
-
     try:
         start_time = time.time()
-        
-        # Determine market type and starting thresholds
-        dataset_info = db.get_dataset_by_id(dataset_id, user_email=user_email) if dataset_id else None
+        ds_key = str(dataset_id)
+
+        # In-Memory Transactional Matrix Cache (sub-second reactive computation)
+        cached_matrix = CACHE_TRANSACTION_MATRIX.get(ds_key)
+        if cached_matrix and (time.time() - cached_matrix.get('time', 0) < 1800):
+            df = cached_matrix['df']
+            transactions = cached_matrix['transactions']
+        else:
+            transactions = db.get_transactions(user_email=user_email, dataset_id=dataset_id)
+            if transactions is None or len(transactions) == 0:
+                return jsonify({
+                    'dataset_id': dataset_id,
+                    'rules': [],
+                    'frequent_itemsets': [],
+                    'algorithm_used': algorithm,
+                    'execution_time_seconds': 0.001,
+                    'total_transactions': 0,
+                    'is_empty': True,
+                    'message': 'No association rules could be mined because the dataset contains 0 transactions.'
+                })
+            te = TransactionEncoder()
+            te_ary = te.fit(transactions).transform(transactions)
+            df = pd.DataFrame(te_ary, columns=te.columns_)
+            CACHE_TRANSACTION_MATRIX[ds_key] = {
+                'time': time.time(),
+                'df': df,
+                'transactions': transactions
+            }
+
+        # Market Type Configuration fallback
         market_type = dataset_info.get('market_type') if (dataset_info and dataset_info.get('market_type')) else 'Default/unknown'
-            
         market_config = MARKET_TYPE_THRESHOLDS.get(market_type, MARKET_TYPE_THRESHOLDS['Default/unknown'])
-        curr_supp = market_config['min_support']
-        curr_conf = market_config['min_confidence']
-        fixed_lift = market_config['min_lift']
-        
-        FLOOR_SUPPORT = 0.0001
-        FLOOR_CONFIDENCE = 0.02
-        MIN_RULES_TARGET = 3
 
-        # Preprocessing for association rule mining
-        te = TransactionEncoder()
-        te_ary = te.fit(transactions).transform(transactions)
-        df = pd.DataFrame(te_ary, columns=te.columns_)
+        has_explicit_params = (req_supp is not None or req_conf is not None or req_lift is not None)
+        if has_explicit_params:
+            try:
+                target_supp = max(0.0001, float(req_supp)) if req_supp is not None else 0.05
+            except (ValueError, TypeError):
+                target_supp = 0.05
+            try:
+                target_conf = max(0.01, float(req_conf)) if req_conf is not None else 0.50
+            except (ValueError, TypeError):
+                target_conf = 0.50
+            try:
+                target_lift = max(0.1, float(req_lift)) if req_lift is not None else 1.0
+            except (ValueError, TypeError):
+                target_lift = 1.0
+        else:
+            target_supp = market_config['min_support']
+            target_conf = market_config['min_confidence']
+            target_lift = market_config['min_lift']
 
-        # Intelligent Auto-Selection Logic
-        selected_algorithm = algorithm
-        algorithm_note = algorithm
-        
-        if algorithm == 'auto':
-            num_tx = len(transactions)
-            all_items = [item for sublist in transactions for item in sublist]
-            num_items = len(set(all_items))
-            
-            # If large dataset or very dense itemsets, use FP-Growth. Otherwise use Apriori.
-            if num_tx >= 500 or num_items >= 50:
+        # Dataset scale & sparsity inspection for Algorithm Routing
+        num_tx = len(transactions)
+        all_items = [item for sublist in transactions for item in sublist]
+        num_items = len(set(all_items))
+        total_cells = num_tx * max(num_items, 1)
+        density = (len(all_items) / total_cells) if total_cells > 0 else 0.0
+        sparsity = 1.0 - density
+
+        if algorithm == 'fpgrowth':
+            selected_algorithm = 'fpgrowth'
+            algorithm_note = 'FP-Growth'
+        elif algorithm == 'apriori':
+            selected_algorithm = 'apriori'
+            algorithm_note = 'Apriori'
+        else:
+            # Auto-Selection Router:
+            # FP-Growth: default for dense or large (>10,000 tx or dense itemsets)
+            # Apriori: for sparse datasets where level-wise pruning minimizes candidate generation overhead
+            if num_tx >= 10000 or density >= 0.08 or (num_tx >= 500 and num_items >= 30):
                 selected_algorithm = 'fpgrowth'
-                algorithm_note = 'FP-Growth (Auto-selected for large data)'
+                algorithm_note = f'FP-Growth (Auto: {num_tx:,} tx, {density*100:.1f}% density)'
             else:
                 selected_algorithm = 'apriori'
-                algorithm_note = 'Apriori (Auto-selected for small data)'
+                algorithm_note = f'Apriori (Auto: {num_tx:,} tx, {sparsity*100:.1f}% sparsity)'
 
         step = 0
-        best_rules = pd.DataFrame()
-        best_frequent_itemsets = pd.DataFrame()
-        used_supp = curr_supp
-        used_conf = curr_conf
-        used_step = step
+        used_step = 0
 
-        while True:
+        if has_explicit_params:
+            # Strict Parameter Binding: Directly execute with user slider thresholds
+            used_supp = target_supp
+            used_conf = target_conf
+            fixed_lift = target_lift
+
             if selected_algorithm == 'apriori':
-                frequent_itemsets = apriori(df, min_support=curr_supp, use_colnames=True)
+                frequent_itemsets = apriori(df, min_support=target_supp, use_colnames=True)
             else:
-                frequent_itemsets = fpgrowth(df, min_support=curr_supp, use_colnames=True)
-                
+                frequent_itemsets = fpgrowth(df, min_support=target_supp, use_colnames=True)
+
             if frequent_itemsets.empty:
-                current_rules = pd.DataFrame()
+                rules = pd.DataFrame()
             else:
-                current_rules = association_rules(pd.DataFrame(frequent_itemsets), metric="confidence", min_threshold=curr_conf)
-                if not current_rules.empty:
-                    current_rules = current_rules[current_rules['lift'] >= fixed_lift]
-                    
-            if not current_rules.empty and (best_rules.empty or len(current_rules) > len(best_rules)):
-                best_rules = current_rules
-                best_frequent_itemsets = frequent_itemsets
-                used_supp = curr_supp
-                used_conf = curr_conf
-                used_step = step
-                
-            if len(current_rules) >= MIN_RULES_TARGET:
-                best_rules = current_rules
-                best_frequent_itemsets = frequent_itemsets
-                used_supp = curr_supp
-                used_conf = curr_conf
-                used_step = step
-                break
-                
-            if curr_supp <= FLOOR_SUPPORT and curr_conf <= FLOOR_CONFIDENCE:
-                if best_rules.empty:
+                rules = association_rules(pd.DataFrame(frequent_itemsets), metric="confidence", min_threshold=target_conf)
+                if not rules.empty and 'lift' in rules.columns:
+                    rules = rules[rules['lift'] >= fixed_lift]
+        else:
+            # Adaptive fallback loop for unconfigured first-time dataset ingestion
+            curr_supp = target_supp
+            curr_conf = target_conf
+            fixed_lift = target_lift
+            FLOOR_SUPPORT = 0.0001
+            FLOOR_CONFIDENCE = 0.02
+            MIN_RULES_TARGET = 3
+            best_rules = pd.DataFrame()
+            best_frequent_itemsets = pd.DataFrame()
+            used_supp = curr_supp
+            used_conf = curr_conf
+            used_step = step
+
+            while True:
+                if selected_algorithm == 'apriori':
+                    frequent_itemsets = apriori(df, min_support=curr_supp, use_colnames=True)
+                else:
+                    frequent_itemsets = fpgrowth(df, min_support=curr_supp, use_colnames=True)
+
+                if frequent_itemsets.empty:
+                    current_rules = pd.DataFrame()
+                else:
+                    current_rules = association_rules(pd.DataFrame(frequent_itemsets), metric="confidence", min_threshold=curr_conf)
+                    if not current_rules.empty and 'lift' in current_rules.columns:
+                        current_rules = current_rules[current_rules['lift'] >= fixed_lift]
+
+                if not current_rules.empty and (best_rules.empty or len(current_rules) > len(best_rules)):
+                    best_rules = current_rules
+                    best_frequent_itemsets = frequent_itemsets
                     used_supp = curr_supp
                     used_conf = curr_conf
                     used_step = step
-                break
-                
-            step += 1
-            next_supp = max(curr_supp / 2.0, FLOOR_SUPPORT)
-            next_conf = max(curr_conf - 0.05, FLOOR_CONFIDENCE)
-            if next_supp == curr_supp and next_conf == curr_conf:
-                if best_rules.empty:
+
+                if len(current_rules) >= MIN_RULES_TARGET:
+                    best_rules = current_rules
+                    best_frequent_itemsets = frequent_itemsets
                     used_supp = curr_supp
                     used_conf = curr_conf
                     used_step = step
-                break
-            curr_supp = next_supp
-            curr_conf = next_conf
+                    break
+
+                if curr_supp <= FLOOR_SUPPORT and curr_conf <= FLOOR_CONFIDENCE:
+                    if best_rules.empty:
+                        used_supp = curr_supp
+                        used_conf = curr_conf
+                        used_step = step
+                    break
+
+                step += 1
+                next_supp = max(curr_supp / 2.0, FLOOR_SUPPORT)
+                next_conf = max(curr_conf - 0.05, FLOOR_CONFIDENCE)
+                if next_supp == curr_supp and next_conf == curr_conf:
+                    if best_rules.empty:
+                        used_supp = curr_supp
+                        used_conf = curr_conf
+                        used_step = step
+                    break
+                curr_supp = next_supp
+                curr_conf = next_conf
+
+            frequent_itemsets = best_frequent_itemsets
+            rules = best_rules
 
         logger.info(
-            f"[ADAPTIVE MINING LOG] Dataset ID: {dataset_id} | Market Type: '{market_type}' | "
-            f"Tier Step: {used_step} | Starting (Supp: {market_config['min_support']:.4f}, Conf: {market_config['min_confidence']:.4f}) | "
-            f"Final Used (Supp: {used_supp:.4f}, Conf: {used_conf:.4f}, Lift: {fixed_lift}) | "
-            f"Rules Found: {len(best_rules)}"
+            f"[MINING LOG] Dataset ID: {dataset_id} | Engine: {selected_algorithm} | "
+            f"Supp: {used_supp:.4f}, Conf: {used_conf:.4f}, Lift: {fixed_lift:.2f} | "
+            f"Itemsets: {len(frequent_itemsets)}, Rules: {len(rules)}"
         )
 
-        frequent_itemsets = best_frequent_itemsets
-        rules = best_rules
         execution_time = time.time() - start_time
 
-        if rules.empty and transactions:
+        # Format rules helper
+        def clean_float(val, default=0.0):
+            if pd.isna(val) or math.isnan(val):
+                return default
+            if math.isinf(val):
+                return 999.0 if val > 0 else -999.0
+            return float(val)
+
+        # Format frequent itemsets for JSON
+        formatted_itemsets = []
+        if not frequent_itemsets.empty:
+            for _, row in frequent_itemsets.iterrows():
+                formatted_itemsets.append({
+                    'items': list(row['itemsets']),
+                    'support': clean_float(row['support'])
+                })
+
+        if rules.empty and transactions and not frequent_itemsets.empty:
             # Fallback 1: Derive rules from multi-item frequent itemsets
             derived_list = []
-            if not frequent_itemsets.empty:
-                item_supp_map = {}
-                for _, r_item in frequent_itemsets.iterrows():
-                    its = list(r_item['itemsets'])
-                    if len(its) == 1:
-                        item_supp_map[its[0]] = r_item['support']
-                for _, r_item in frequent_itemsets.iterrows():
-                    its = list(r_item['itemsets'])
-                    if len(its) >= 2:
-                        sup = r_item['support']
-                        for i in range(len(its)):
-                            for j in range(len(its)):
-                                if i != j:
-                                    ant_name = its[i]
-                                    cons_name = its[j]
-                                    ant_sup = item_supp_map.get(ant_name, sup)
-                                    cons_sup = item_supp_map.get(cons_name, sup)
-                                    conf = sup / ant_sup if ant_sup > 0 else 0.0
-                                    lift = conf / cons_sup if cons_sup > 0 else 1.0
+            item_supp_map = {}
+            for _, r_item in frequent_itemsets.iterrows():
+                its = list(r_item['itemsets'])
+                if len(its) == 1:
+                    item_supp_map[its[0]] = r_item['support']
+            for _, r_item in frequent_itemsets.iterrows():
+                its = list(r_item['itemsets'])
+                if len(its) >= 2:
+                    sup = r_item['support']
+                    for i in range(len(its)):
+                        for j in range(len(its)):
+                            if i != j:
+                                ant_name = its[i]
+                                cons_name = its[j]
+                                ant_sup = item_supp_map.get(ant_name, sup)
+                                cons_sup = item_supp_map.get(cons_name, sup)
+                                conf = sup / ant_sup if ant_sup > 0 else 0.0
+                                lift = conf / cons_sup if cons_sup > 0 else 1.0
+                                if (not has_explicit_params) or (conf >= target_conf and lift >= target_lift):
                                     derived_list.append({
                                         'antecedents': frozenset([ant_name]),
                                         'consequents': frozenset([cons_name]),
@@ -1170,8 +1258,8 @@ def mine_rules():
                                     })
             if derived_list:
                 rules = pd.DataFrame(derived_list).sort_values(by=['confidence', 'support'], ascending=[False, False])
-            else:
-                # Fallback 2: Direct co-occurrence pair rule synthesis
+            elif not has_explicit_params:
+                # Fallback 2: Direct co-occurrence pair rule synthesis only for initial unconfigured auto-run
                 total_tx = len(transactions)
                 pair_counts = {}
                 item_counts = {}
@@ -1184,7 +1272,7 @@ def mine_rules():
                         for j in range(i+1, len(tx_items)):
                             pair = (tx_items[i], tx_items[j])
                             pair_counts[pair] = pair_counts.get(pair, 0) + 1
-                
+
                 co_rules = []
                 for (a, b), cnt in pair_counts.items():
                     sup_ab = cnt / total_tx
@@ -1194,7 +1282,7 @@ def mine_rules():
                     conf_ba = cnt / item_counts[b]
                     lift_ab = conf_ab / sup_b if sup_b > 0 else 1.0
                     lift_ba = conf_ba / sup_a if sup_a > 0 else 1.0
-                    
+
                     co_rules.append({
                         'antecedents': frozenset([a]),
                         'consequents': frozenset([b]),
@@ -1220,27 +1308,63 @@ def mine_rules():
             metrics = {
                 'execution_time': execution_time,
                 'rules_count': 0,
-                'frequent_itemsets_count': len(frequent_itemsets) if not frequent_itemsets.empty else 0,
+                'frequent_itemsets_count': len(formatted_itemsets),
                 'algorithm': algorithm_note,
                 'adaptive_thresholds': {
                     'market_type': market_type,
                     'tier_step': used_step,
-                    'starting_support': market_config['min_support'],
-                    'starting_confidence': market_config['min_confidence'],
+                    'starting_support': target_supp,
+                    'starting_confidence': target_conf,
                     'final_support': used_supp,
                     'final_confidence': used_conf,
                     'fixed_lift': fixed_lift,
                     'rules_found': 0
                 }
             }
-            return jsonify({
+
+            # Record analysis execution in database even when 0 rules met thresholds
+            try:
+                business_id = dataset_info.get('business_id') or _get_store_id_for_user(user_info)
+                summary_info = {
+                    'rules_count': 0,
+                    'frequent_itemsets_count': len(formatted_itemsets),
+                    'execution_time': execution_time,
+                    'algorithm': selected_algorithm,
+                    'step': used_step,
+                    'support': used_supp,
+                    'confidence': used_conf
+                }
+                db.create_analysis_record(
+                    business_id=business_id,
+                    dataset_id=dataset_id,
+                    user_email=user_email,
+                    algorithm=selected_algorithm,
+                    parameters={'support': used_supp, 'confidence': used_conf, 'lift': fixed_lift, 'algorithm': algorithm},
+                    execution_time=round(execution_time, 4),
+                    status='Completed',
+                    rules_count=0,
+                    frequent_itemsets_count=len(formatted_itemsets),
+                    results_summary=summary_info
+                )
+                _log_current_user_action('RUN_ANALYSIS', {
+                    'dataset_id': dataset_id,
+                    'algorithm': selected_algorithm,
+                    'rules_count': 0,
+                    'execution_time': round(execution_time, 4)
+                })
+            except Exception as log_err:
+                logger.warning(f"Failed to record analysis log: {log_err}")
+
+            res_payload = {
                 'dataset_id': dataset_id,
                 'rules': [],
-                'frequent_itemsets': [],
+                'frequent_itemsets': formatted_itemsets,
                 'gaps': [],
                 'metrics': metrics,
-                'message': 'No statistically significant buying patterns could be discovered in this dataset, even after relaxing thresholds to the minimum floor (support 0.01%, confidence 2%). This typically occurs when there are too few transactions or high product variety without repeated co-purchases.'
-            })
+                'message': 'No association rules met the required confidence and lift thresholds for this support level.' if formatted_itemsets else 'No frequent itemsets or rules found for these parameter thresholds.'
+            }
+            CACHE_MINE[cache_key] = {'time': time.time(), 'data': res_payload}
+            return jsonify(res_payload)
 
         # Format rules for JSON
         def clean_float(val, default=0.0):
@@ -1385,8 +1509,8 @@ def mine_rules():
             'adaptive_thresholds': {
                 'market_type': market_type,
                 'tier_step': used_step,
-                'starting_support': market_config['min_support'],
-                'starting_confidence': market_config['min_confidence'],
+                'starting_support': target_supp,
+                'starting_confidence': target_conf,
                 'final_support': used_supp,
                 'final_confidence': used_conf,
                 'fixed_lift': fixed_lift,
@@ -1752,16 +1876,50 @@ def get_frequently_bought_together():
             'frequently_bought_together': []
         })
 
+    req_supp = request.args.get('min_support')
+    req_conf = request.args.get('min_confidence')
+    req_lift = request.args.get('min_lift')
+    if request.is_json and request.json:
+        if req_supp is None:
+            req_supp = request.json.get('min_support')
+        if req_conf is None:
+            req_conf = request.json.get('min_confidence')
+        if req_lift is None:
+            req_lift = request.json.get('min_lift')
+
+    try:
+        min_supp_threshold = float(req_supp) if req_supp is not None and str(req_supp).strip() != '' else None
+    except (ValueError, TypeError):
+        min_supp_threshold = None
+
+    try:
+        min_conf_threshold = float(req_conf) if req_conf is not None and str(req_conf).strip() != '' else None
+    except (ValueError, TypeError):
+        min_conf_threshold = None
+
+    try:
+        min_lift_threshold = float(req_lift) if req_lift is not None and str(req_lift).strip() != '' else None
+    except (ValueError, TypeError):
+        min_lift_threshold = None
+
     transactions = db.get_transactions(user_email=user_email, dataset_id=dataset_id)
     if transactions is None or len(transactions) == 0:
         return jsonify({
             'selected_product': selected_products[0] if selected_products else '',
             'selected_products': selected_products,
-            'frequently_bought_together': []
+            'frequently_bought_together': [],
+            'total_transactions': 0
         })
 
+    total_tx = len(transactions)
     cat_map = db.get_product_categories_for_dataset(dataset_id=dataset_id, user_email=user_email)
     target_clean_lower = {p.lower() for p in selected_products}
+
+    # Precalculate baseline frequencies for lift computation
+    item_total_counts = {}
+    for tx in transactions:
+        for it in set([str(x).strip().lower() for x in tx if x]):
+            item_total_counts[it] = item_total_counts.get(it, 0) + 1
     
     # 1. Exact match transactions: contain ALL selected products
     exact_match_txs = []
@@ -1790,17 +1948,33 @@ def get_frequently_bought_together():
                     if it_lower not in target_clean_lower:
                         co_counts[orig_name] = co_counts.get(orig_name, 0) + 1
 
-    results = [
-        {
+    results = []
+    for name, count in co_counts.items():
+        name_lower = name.strip().lower()
+        # In a cart context, support is the relative co-occurrence rate within matching cart baskets
+        cart_relative_support = (count / matched_tx_count) if matched_tx_count > 0 else 0.0
+        global_pair_support = (count / total_tx) if total_tx > 0 else 0.0
+        pair_confidence = cart_relative_support
+        item_base_support = (item_total_counts.get(name_lower, 0) / total_tx) if total_tx > 0 else 0.0
+        pair_lift = (pair_confidence / item_base_support) if item_base_support > 0 else 1.0
+
+        # Parameter binding filters: relative co-occurrence support within matching baskets
+        if min_supp_threshold is not None and cart_relative_support < min_supp_threshold:
+            continue
+
+        results.append({
             'product_name': name,
             'name': name,
             'count': count,
             'category': cat_map.get(name, 'Uncategorized'),
-            'percentage': round((count / matched_tx_count * 100), 1) if matched_tx_count > 0 else 0
-        }
-        for name, count in co_counts.items()
-    ]
-    # Full list exposed! No limit of 1 result!
+            'percentage': round((count / matched_tx_count * 100), 1) if matched_tx_count > 0 else 0,
+            'support': round(cart_relative_support, 4),
+            'global_support': round(global_pair_support, 4),
+            'confidence': round(pair_confidence, 4),
+            'lift': round(pair_lift, 2)
+        })
+
+    # Sort descending by count, then name
     results.sort(key=lambda x: (-x['count'], x['product_name'].lower()))
 
     return jsonify({
@@ -1808,7 +1982,13 @@ def get_frequently_bought_together():
         'selected_products': selected_products,
         'frequently_bought_together': results,
         'match_mode': 'exact' if exact_match_txs else 'partial',
-        'matched_transactions': matched_tx_count
+        'matched_transactions': matched_tx_count,
+        'total_transactions': total_tx,
+        'filters_applied': {
+            'min_support': min_supp_threshold,
+            'min_confidence': min_conf_threshold,
+            'min_lift': min_lift_threshold
+        }
     })
 
 @app.route('/api/frequently_bought_together', methods=['GET', 'POST'])
@@ -3399,6 +3579,8 @@ def admin_evaluations_benchmark():
 
     min_support = float(data.get('min_support', 0.05))
     min_confidence = float(data.get('min_confidence', 0.50))
+    algorithm_mode = str(data.get('algorithm_mode', 'mined')).strip().lower()
+    has_run_other = algorithm_mode in ('other', 'alternative', 'both')
 
     if str(dataset_id).lower() == 'all':
         conn = db.get_db_connection()
@@ -3409,6 +3591,12 @@ def admin_evaluations_benchmark():
             WHERE d.transaction_count > 0
             ORDER BY d.id
         """).fetchall()
+
+        # Determine overall mined algorithm across platform
+        ap_mine_count = conn.execute("SELECT COUNT(*) FROM analyses WHERE LOWER(algorithm) = 'apriori'").fetchone()[0]
+        fp_mine_count = conn.execute("SELECT COUNT(*) FROM analyses WHERE LOWER(algorithm) LIKE 'fp%'").fetchone()[0]
+        overall_mined = 'FP-Growth' if fp_mine_count > ap_mine_count else 'Apriori'
+        other_mined = 'FP-Growth' if overall_mined == 'Apriori' else 'Apriori'
 
         breakdown = []
         apriori_times = []
@@ -3446,65 +3634,97 @@ def admin_evaluations_benchmark():
             te_ary = te.fit(txs).transform(txs)
             df = pd.DataFrame(te_ary, columns=te.columns_)
 
+            mined_record = conn.execute("""
+                SELECT algorithm FROM analyses WHERE dataset_id = ? ORDER BY id DESC LIMIT 1
+            """, (did,)).fetchone()
+
+            num_tx = ds['transaction_count'] or len(txs)
+            num_it = ds['unique_items'] or len(te.columns_)
+
+            if mined_record and mined_record['algorithm']:
+                raw_mined = mined_record['algorithm'].strip().lower()
+                if raw_mined == 'apriori':
+                    ds_algo = 'Apriori'
+                elif raw_mined in ('fpgrowth', 'fp-growth'):
+                    ds_algo = 'FP-Growth'
+                else:
+                    ds_algo = 'FP-Growth' if num_tx >= 10000 or (num_tx >= 500 and num_it >= 30) else 'Apriori'
+            else:
+                if num_tx >= 10000 or (num_tx >= 500 and num_it >= 30):
+                    ds_algo = 'FP-Growth'
+                else:
+                    ds_algo = 'Apriori'
+
+            if ds_algo == 'FP-Growth':
+                fpgrowth_selected_count += 1
+            else:
+                apriori_selected_count += 1
+
+            # Check which algorithms to run
+            if has_run_other or algorithm_mode in ('other', 'alternative', 'both'):
+                run_ap = True
+                run_fp = True
+            else:  # 'mined'
+                run_ap = (ds_algo == 'Apriori')
+                run_fp = (ds_algo == 'FP-Growth')
+
             # Apriori
-            tracemalloc.start()
-            t0_ap = time.time()
-            try:
-                ap_items = apriori(df, min_support=min_support, use_colnames=True)
-                ap_time = round(time.time() - t0_ap, 4)
-                _, ap_peak = tracemalloc.get_traced_memory()
-                tracemalloc.stop()
-                ap_rules = association_rules(ap_items, metric="confidence", min_threshold=min_confidence) if not ap_items.empty else pd.DataFrame()
-            except Exception:
-                tracemalloc.stop()
+            if run_ap:
+                tracemalloc.start()
+                t0_ap = time.time()
+                try:
+                    ap_items = apriori(df, min_support=min_support, use_colnames=True)
+                    ap_time = round(time.time() - t0_ap, 4)
+                    _, ap_peak = tracemalloc.get_traced_memory()
+                    tracemalloc.stop()
+                    ap_rules = association_rules(ap_items, metric="confidence", min_threshold=min_confidence) if not ap_items.empty else pd.DataFrame()
+                except Exception:
+                    tracemalloc.stop()
+                    ap_time = 0.0
+                    ap_peak = 0
+                    ap_items = pd.DataFrame()
+                    ap_rules = pd.DataFrame()
+                ap_mem_kb = round(ap_peak / 1024, 2)
+            else:
                 ap_time = 0.0
-                ap_peak = 0
+                ap_mem_kb = 0.0
                 ap_items = pd.DataFrame()
                 ap_rules = pd.DataFrame()
 
             # FP-Growth
-            tracemalloc.start()
-            t0_fp = time.time()
-            try:
-                fp_items = fpgrowth(df, min_support=min_support, use_colnames=True)
-                fp_time = round(time.time() - t0_fp, 4)
-                _, fp_peak = tracemalloc.get_traced_memory()
-                tracemalloc.stop()
-                fp_rules = association_rules(pd.DataFrame(fp_items), metric="confidence", min_threshold=min_confidence) if not fp_items.empty else pd.DataFrame()
-            except Exception:
-                tracemalloc.stop()
+            if run_fp:
+                tracemalloc.start()
+                t0_fp = time.time()
+                try:
+                    fp_items = fpgrowth(df, min_support=min_support, use_colnames=True)
+                    fp_time = round(time.time() - t0_fp, 4)
+                    _, fp_peak = tracemalloc.get_traced_memory()
+                    tracemalloc.stop()
+                    fp_rules = association_rules(pd.DataFrame(fp_items), metric="confidence", min_threshold=min_confidence) if not fp_items.empty else pd.DataFrame()
+                except Exception:
+                    tracemalloc.stop()
+                    fp_time = 0.0
+                    fp_peak = 0
+                    fp_items = pd.DataFrame()
+                    fp_rules = pd.DataFrame()
+                fp_mem_kb = round(fp_peak / 1024, 2)
+            else:
                 fp_time = 0.0
-                fp_peak = 0
+                fp_mem_kb = 0.0
                 fp_items = pd.DataFrame()
                 fp_rules = pd.DataFrame()
 
-            ap_mem_kb = round(ap_peak / 1024, 2)
-            fp_mem_kb = round(fp_peak / 1024, 2)
+            if run_ap:
+                apriori_times.append(ap_time)
+                apriori_mems.append(ap_mem_kb)
+                total_ap_rules += len(ap_rules)
+                total_ap_itemsets += len(ap_items)
 
-            # Policy selection for this dataset
-            num_tx = ds['transaction_count'] or len(txs)
-            num_it = ds['unique_items'] or len(te.columns_)
-            if fp_peak < ap_peak and (num_tx >= 500 or num_it >= 50 or fp_time <= ap_time * 2.0):
-                ds_algo = 'FP-Growth'
-                fpgrowth_selected_count += 1
-            elif ap_time < fp_time and ap_peak <= fp_peak * 1.5:
-                ds_algo = 'Apriori'
-                apriori_selected_count += 1
-            elif fp_time <= ap_time:
-                ds_algo = 'FP-Growth'
-                fpgrowth_selected_count += 1
-            else:
-                ds_algo = 'Apriori'
-                apriori_selected_count += 1
-
-            apriori_times.append(ap_time)
-            fpgrowth_times.append(fp_time)
-            apriori_mems.append(ap_mem_kb)
-            fpgrowth_mems.append(fp_mem_kb)
-            total_ap_rules += len(ap_rules)
-            total_fp_rules += len(fp_rules)
-            total_ap_itemsets += len(ap_items)
-            total_fp_itemsets += len(fp_items)
+            if run_fp:
+                fpgrowth_times.append(fp_time)
+                fpgrowth_mems.append(fp_mem_kb)
+                total_fp_rules += len(fp_rules)
+                total_fp_itemsets += len(fp_items)
 
             breakdown.append({
                 'id': did,
@@ -3513,39 +3733,48 @@ def admin_evaluations_benchmark():
                 'transactions': ds['transaction_count'] or len(txs),
                 'unique_items': ds['unique_items'] or len(te.columns_),
                 'selected_algorithm': ds_algo,
-                'faster_algorithm': 'FP-Growth' if fp_time <= ap_time else 'Apriori',
-                'memory_winner': 'FP-Growth' if fp_peak <= ap_peak else 'Apriori',
-                'apriori_time': ap_time,
-                'fpgrowth_time': fp_time,
-                'apriori_mem_kb': ap_mem_kb,
-                'fpgrowth_mem_kb': fp_mem_kb,
-                'rules_generated': len(fp_rules),
-                'frequent_itemsets': len(fp_items)
+                'faster_algorithm': ('FP-Growth' if fp_time <= ap_time else 'Apriori') if (run_ap and run_fp) else ds_algo,
+                'memory_winner': ('FP-Growth' if fp_mem_kb <= ap_mem_kb else 'Apriori') if (run_ap and run_fp) else ds_algo,
+                'apriori_time': ap_time if run_ap else None,
+                'fpgrowth_time': fp_time if run_fp else None,
+                'apriori_mem_kb': ap_mem_kb if run_ap else None,
+                'fpgrowth_mem_kb': fp_mem_kb if run_fp else None,
+                'rules_generated': len(fp_rules if run_fp else ap_rules),
+                'frequent_itemsets': len(fp_items if run_fp else ap_items)
             })
 
         conn.close()
 
         n = max(len(breakdown), 1)
-        avg_ap_time = round(sum(apriori_times) / n, 4)
-        avg_fp_time = round(sum(fpgrowth_times) / n, 4)
-        avg_ap_mem = round(sum(apriori_mems) / n, 2)
-        avg_fp_mem = round(sum(fpgrowth_mems) / n, 2)
+        overall_mined = 'FP-Growth' if fpgrowth_selected_count > apriori_selected_count else 'Apriori'
+        other_mined = 'FP-Growth' if overall_mined == 'Apriori' else 'Apriori'
+
+        avg_ap_time = round(sum(apriori_times) / max(len(apriori_times), 1), 4) if apriori_times else 0.0
+        avg_fp_time = round(sum(fpgrowth_times) / max(len(fpgrowth_times), 1), 4) if fpgrowth_times else 0.0
+        avg_ap_mem = round(sum(apriori_mems) / max(len(apriori_mems), 1), 2) if apriori_mems else 0.0
+        avg_fp_mem = round(sum(fpgrowth_mems) / max(len(fpgrowth_mems), 1), 2) if fpgrowth_mems else 0.0
         speedup = round(avg_ap_time / avg_fp_time, 2) if avg_fp_time > 0 and avg_ap_time > 0 else 1.0
 
-        overall_selected = 'FP-Growth' if fpgrowth_selected_count >= apriori_selected_count else 'Apriori'
         selected_pct = round((max(fpgrowth_selected_count, apriori_selected_count) / n) * 100, 1)
         mem_savings_pct = round(((avg_ap_mem - avg_fp_mem) / max(avg_ap_mem, 1)) * 100, 1) if avg_ap_mem > avg_fp_mem else 0
 
-        if overall_selected == 'FP-Growth':
-            reason = (
-                f"Across all {len(breakdown)} platform datasets, FP-Growth was selected in {selected_pct}% of evaluations "
-                f"({fpgrowth_selected_count} of {len(breakdown)} datasets) because it reduced peak memory by an average of {mem_savings_pct}% "
-                f"({avg_fp_mem:,.2f} KB vs {avg_ap_mem:,.2f} KB) while achieving {speedup}x average speedup."
-            )
+        if has_run_other:
+            if overall_mined == 'FP-Growth':
+                reason = (
+                    f"Across all {len(breakdown)} platform datasets, FP-Growth was selected in {selected_pct}% of evaluations "
+                    f"({fpgrowth_selected_count} of {len(breakdown)} datasets) because it reduced peak memory by an average of {mem_savings_pct}% "
+                    f"({avg_fp_mem:,.2f} KB vs {avg_ap_mem:,.2f} KB) while achieving {speedup}x average speedup."
+                )
+            else:
+                reason = (
+                    f"Across all {len(breakdown)} platform datasets, Apriori was selected in {selected_pct}% of evaluations "
+                    f"({apriori_selected_count} of {len(breakdown)} datasets) due to lower execution overhead on small transaction catalogs."
+                )
         else:
             reason = (
-                f"Across all {len(breakdown)} platform datasets, Apriori was selected in {selected_pct}% of evaluations "
-                f"({apriori_selected_count} of {len(breakdown)} datasets) due to lower execution overhead on small transaction catalogs."
+                f"Platform-wide data mining evaluation for {overall_mined}. "
+                f"The alternative algorithm ({other_mined}) has not been benchmarked yet. "
+                f"Click 'Run All Evaluations' or 'Run Benchmark' to execute the comparison benchmark."
             )
 
         return jsonify({
@@ -3558,7 +3787,10 @@ def admin_evaluations_benchmark():
                 'min_support': min_support,
                 'min_confidence': min_confidence
             },
-            'selected_algorithm': overall_selected,
+            'selected_algorithm': overall_mined,
+            'mined_algorithm': overall_mined,
+            'other_algorithm': other_mined,
+            'has_run_other': has_run_other,
             'selection_reason': reason,
             'selected_stats': {
                 'fp_count': fpgrowth_selected_count,
@@ -3580,10 +3812,10 @@ def admin_evaluations_benchmark():
                 'rules_generated': total_fp_rules
             },
             'comparison': {
-                'speedup_factor': speedup,
-                'faster_algorithm': 'FP-Growth' if avg_fp_time <= avg_ap_time else 'Apriori',
-                'memory_efficiency_winner': 'FP-Growth' if avg_fp_mem <= avg_ap_mem else 'Apriori',
-                'rules_agreement': total_ap_rules == total_fp_rules
+                'speedup_factor': speedup if has_run_other else 1.0,
+                'faster_algorithm': ('FP-Growth' if avg_fp_time <= avg_ap_time else 'Apriori') if has_run_other else overall_mined,
+                'memory_efficiency_winner': ('FP-Growth' if avg_fp_mem <= avg_ap_mem else 'Apriori') if has_run_other else overall_mined,
+                'rules_agreement': (total_ap_rules == total_fp_rules) if has_run_other else True
             },
             'dataset_breakdown': breakdown
         })
@@ -3602,6 +3834,10 @@ def admin_evaluations_benchmark():
         WHERE t.dataset_id = ?
         ORDER BY t.id
     """, (dataset_id,)).fetchall()
+
+    mined_record = conn.execute("""
+        SELECT algorithm FROM analyses WHERE dataset_id = ? ORDER BY id DESC LIMIT 1
+    """, (dataset_id,)).fetchone()
     conn.close()
 
     tx_map = {}
@@ -3619,73 +3855,100 @@ def admin_evaluations_benchmark():
     te_ary = te.fit(transactions).transform(transactions)
     df = pd.DataFrame(te_ary, columns=te.columns_)
 
+    num_tx = len(transactions)
+    num_items = len(te.columns_)
+
+    # Determine mined algorithm
+    if mined_record and mined_record['algorithm']:
+        raw_mined = mined_record['algorithm'].strip().lower()
+        if raw_mined == 'apriori':
+            selected_algorithm = 'Apriori'
+        elif raw_mined in ('fpgrowth', 'fp-growth'):
+            selected_algorithm = 'FP-Growth'
+        else:
+            selected_algorithm = 'FP-Growth' if num_tx >= 10000 or (num_tx >= 500 and num_items >= 30) else 'Apriori'
+    else:
+        if num_tx >= 10000 or (num_tx >= 500 and num_items >= 30):
+            selected_algorithm = 'FP-Growth'
+        else:
+            selected_algorithm = 'Apriori'
+
+    other_algorithm = 'FP-Growth' if selected_algorithm == 'Apriori' else 'Apriori'
+
+    run_apriori = True if has_run_other else (selected_algorithm == 'Apriori')
+    run_fpgrowth = True if has_run_other else (selected_algorithm == 'FP-Growth')
+
     # 1. Benchmark Apriori
-    tracemalloc.start()
-    t0_apriori = time.time()
-    try:
-        apriori_itemsets = apriori(df, min_support=min_support, use_colnames=True)
-        apriori_time = round(time.time() - t0_apriori, 4)
-        apriori_current_mem, apriori_peak_mem = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
-        apriori_rules = association_rules(apriori_itemsets, metric="confidence", min_threshold=min_confidence) if not apriori_itemsets.empty else pd.DataFrame()
-        apriori_itemsets_count = len(apriori_itemsets)
-        apriori_rules_count = len(apriori_rules)
-    except Exception as e:
-        tracemalloc.stop()
+    if run_apriori:
+        tracemalloc.start()
+        t0_apriori = time.time()
+        try:
+            apriori_itemsets = apriori(df, min_support=min_support, use_colnames=True)
+            apriori_time = round(time.time() - t0_apriori, 4)
+            _, apriori_peak_mem = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
+            apriori_rules = association_rules(apriori_itemsets, metric="confidence", min_threshold=min_confidence) if not apriori_itemsets.empty else pd.DataFrame()
+            apriori_itemsets_count = len(apriori_itemsets)
+            apriori_rules_count = len(apriori_rules)
+            apriori_mem_kb = round(apriori_peak_mem / 1024, 2)
+        except Exception:
+            tracemalloc.stop()
+            apriori_time = 0.0
+            apriori_mem_kb = 0.0
+            apriori_itemsets_count = 0
+            apriori_rules_count = 0
+    else:
         apriori_time = 0.0
-        apriori_peak_mem = 0
+        apriori_mem_kb = 0.0
         apriori_itemsets_count = 0
         apriori_rules_count = 0
 
     # 2. Benchmark FP-Growth
-    tracemalloc.start()
-    t0_fpgrowth = time.time()
-    try:
-        fpgrowth_itemsets = fpgrowth(df, min_support=min_support, use_colnames=True)
-        fpgrowth_time = round(time.time() - t0_fpgrowth, 4)
-        fpgrowth_current_mem, fpgrowth_peak_mem = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
-        fpgrowth_rules = association_rules(pd.DataFrame(fpgrowth_itemsets), metric="confidence", min_threshold=min_confidence) if not fpgrowth_itemsets.empty else pd.DataFrame()
-        fpgrowth_itemsets_count = len(fpgrowth_itemsets)
-        fpgrowth_rules_count = len(fpgrowth_rules)
-    except Exception as e:
-        tracemalloc.stop()
+    if run_fpgrowth:
+        tracemalloc.start()
+        t0_fpgrowth = time.time()
+        try:
+            fpgrowth_itemsets = fpgrowth(df, min_support=min_support, use_colnames=True)
+            fpgrowth_time = round(time.time() - t0_fpgrowth, 4)
+            _, fpgrowth_peak_mem = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
+            fpgrowth_rules = association_rules(pd.DataFrame(fpgrowth_itemsets), metric="confidence", min_threshold=min_confidence) if not fpgrowth_itemsets.empty else pd.DataFrame()
+            fpgrowth_itemsets_count = len(fpgrowth_itemsets)
+            fpgrowth_rules_count = len(fpgrowth_rules)
+            fpgrowth_mem_kb = round(fpgrowth_peak_mem / 1024, 2)
+        except Exception:
+            tracemalloc.stop()
+            fpgrowth_time = 0.0
+            fpgrowth_mem_kb = 0.0
+            fpgrowth_itemsets_count = 0
+            fpgrowth_rules_count = 0
+    else:
         fpgrowth_time = 0.0
-        fpgrowth_peak_mem = 0
+        fpgrowth_mem_kb = 0.0
         fpgrowth_itemsets_count = 0
         fpgrowth_rules_count = 0
 
     speedup = round(apriori_time / fpgrowth_time, 2) if fpgrowth_time > 0 and apriori_time > 0 else 1.0
 
-    # Policy-based algorithm selection logic
-    num_tx = len(transactions)
-    num_items = len(te.columns_)
-    apriori_mem_kb = round(apriori_peak_mem / 1024, 2)
-    fpgrowth_mem_kb = round(fpgrowth_peak_mem / 1024, 2)
-
-    if fpgrowth_peak_mem < apriori_peak_mem and (num_tx >= 500 or num_items >= 50 or fpgrowth_time <= apriori_time * 2.0):
-        selected_algorithm = 'FP-Growth'
-        selection_reason = (
-            f"The system selected FP-Growth because it uses significantly less memory "
-            f"({fpgrowth_mem_kb:,.2f} KB vs {apriori_mem_kb:,.2f} KB) while still producing the same number of rules and frequent itemsets."
-        )
-    elif apriori_time < fpgrowth_time and apriori_peak_mem <= fpgrowth_peak_mem * 1.5:
-        selected_algorithm = 'Apriori'
-        selection_reason = (
-            f"The system selected Apriori because it completed the evaluation faster "
-            f"({apriori_time:.4f}s vs {fpgrowth_time:.4f}s) while producing the same number of rules and frequent itemsets."
-        )
-    elif fpgrowth_time <= apriori_time:
-        selected_algorithm = 'FP-Growth'
-        selection_reason = (
-            f"The system selected FP-Growth because it completed the evaluation faster "
-            f"({fpgrowth_time:.4f}s vs {apriori_time:.4f}s) while producing the same number of rules and frequent itemsets."
-        )
+    ds_name = ds_row['name']
+    if has_run_other:
+        if selected_algorithm == 'Apriori':
+            selection_reason = (
+                f"The system selected Apriori for data mining on {ds_name} because it completed faster "
+                f"({apriori_time:.4f}s vs {fpgrowth_time:.4f}s) on this dataset ({num_tx:,} transactions) "
+                f"using level-wise candidate pruning without FP-Tree overhead."
+            )
+        else:
+            selection_reason = (
+                f"The system selected FP-Growth for data mining on {ds_name} because it reduced peak memory "
+                f"({fpgrowth_mem_kb:,.2f} KB vs {apriori_mem_kb:,.2f} KB) on this dataset ({num_tx:,} transactions) "
+                f"using compressed FP-Tree structure."
+            )
     else:
-        selected_algorithm = 'Apriori'
         selection_reason = (
-            f"The system selected Apriori because it completed the evaluation faster "
-            f"({apriori_time:.4f}s vs {fpgrowth_time:.4f}s) while producing the same number of rules and frequent itemsets."
+            f"The system originally used {selected_algorithm} for data mining on {ds_name} ({num_tx:,} transactions). "
+            f"The alternative algorithm ({other_algorithm}) has not been benchmarked yet. "
+            f"Click 'Run Benchmark' to execute the comparison."
         )
 
     return jsonify({
@@ -3698,6 +3961,9 @@ def admin_evaluations_benchmark():
             'min_confidence': min_confidence
         },
         'selected_algorithm': selected_algorithm,
+        'mined_algorithm': selected_algorithm,
+        'other_algorithm': other_algorithm,
+        'has_run_other': has_run_other,
         'selection_reason': selection_reason,
         'apriori': {
             'execution_time_seconds': apriori_time,
@@ -3712,10 +3978,10 @@ def admin_evaluations_benchmark():
             'rules_generated': fpgrowth_rules_count
         },
         'comparison': {
-            'speedup_factor': speedup,
-            'faster_algorithm': 'FP-Growth' if fpgrowth_time <= apriori_time else 'Apriori',
-            'memory_efficiency_winner': 'FP-Growth' if fpgrowth_peak_mem <= apriori_peak_mem else 'Apriori',
-            'rules_agreement': apriori_rules_count == fpgrowth_rules_count
+            'speedup_factor': speedup if has_run_other else 1.0,
+            'faster_algorithm': ('FP-Growth' if fpgrowth_time <= apriori_time else 'Apriori') if has_run_other else selected_algorithm,
+            'memory_efficiency_winner': ('FP-Growth' if fpgrowth_mem_kb <= apriori_mem_kb else 'Apriori') if has_run_other else selected_algorithm,
+            'rules_agreement': (apriori_rules_count == fpgrowth_rules_count) if has_run_other else True
         }
     })
 

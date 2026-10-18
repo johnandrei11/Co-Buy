@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import {
@@ -8,7 +8,11 @@ import {
   Calendar,
   Sparkles,
   Filter,
-  Loader2
+  Loader2,
+  Layers,
+  ChevronDown,
+  ChevronUp,
+  Download
 } from 'lucide-react';
 
 import AnalyticsSetupState from '../components/analytics/AnalyticsSetupState';
@@ -44,9 +48,6 @@ const Analytics = () => {
   const [miningStatus, setMiningStatus] = useState(() => {
     const saved = sessionStorage.getItem('analytics_results');
     return saved ? 'success' : 'idle';
-  });
-  const [activeSubTab, setActiveSubTab] = useState(() => {
-    return sessionStorage.getItem('analytics_subtab') || 'recommendations';
   });
   const [duplicateNotice, setDuplicateNotice] = useState(null);
 
@@ -93,10 +94,6 @@ const Analytics = () => {
     sessionStorage.setItem('analytics_params', JSON.stringify(params));
   }, [params]);
 
-  useEffect(() => {
-    sessionStorage.setItem('analytics_subtab', activeSubTab);
-  }, [activeSubTab]);
-
 
   // Real-time states
   const [stats, setStats] = useState({
@@ -121,6 +118,7 @@ const Analytics = () => {
   });
   const [showMiningModal, setShowMiningModal] = useState(false);
   const [showParamsModal, setShowParamsModal] = useState(false);
+  const [isRecomputing, setIsRecomputing] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState(['All']);
   const [selectedCartProducts, setSelectedCartProducts] = useState([]);
   const [coBoughtResults, setCoBoughtResults] = useState([]);
@@ -405,7 +403,7 @@ const Analytics = () => {
     }
   };
 
-  const fetchCoBoughtTogether = async (productSelection, overrideDatasetId = null) => {
+  const fetchCoBoughtTogether = async (productSelection, overrideDatasetId = null, overrideParams = null) => {
     const products = Array.isArray(productSelection)
       ? productSelection.filter(Boolean)
       : (productSelection ? [productSelection] : []);
@@ -417,12 +415,16 @@ const Analytics = () => {
     setLoadingCoBought(true);
     try {
       const targetId = overrideDatasetId || datasetId;
-      const params = new URLSearchParams();
-      products.forEach(p => params.append('product', p));
+      const activeParams = overrideParams || params;
+      const queryParams = new URLSearchParams();
+      products.forEach(p => queryParams.append('product', p));
       if (targetId) {
-        params.append('dataset_id', targetId);
+        queryParams.append('dataset_id', targetId);
       }
-      const response = await axios.get(`${API_BASE}/frequently_bought_together?${params.toString()}`);
+      if (activeParams?.min_support !== undefined && activeParams?.min_support !== null) {
+        queryParams.append('min_support', activeParams.min_support);
+      }
+      const response = await axios.get(`${API_BASE}/frequently_bought_together?${queryParams.toString()}`);
       if (response.data && Array.isArray(response.data.frequently_bought_together)) {
         setCoBoughtResults(response.data.frequently_bought_together);
       } else {
@@ -443,7 +445,7 @@ const Analytics = () => {
       const next = exists
         ? prev.filter(p => p.toLowerCase() !== productName.toLowerCase())
         : [...prev, productName];
-      fetchCoBoughtTogether(next);
+      fetchCoBoughtTogether(next, null, params);
       return next;
     });
   };
@@ -451,7 +453,7 @@ const Analytics = () => {
   const handleRemoveCartProduct = (productName) => {
     setSelectedCartProducts(prev => {
       const next = prev.filter(p => p.toLowerCase() !== productName.toLowerCase());
-      fetchCoBoughtTogether(next);
+      fetchCoBoughtTogether(next, null, params);
       return next;
     });
   };
@@ -469,7 +471,7 @@ const Analytics = () => {
   useEffect(() => {
     fetchStats();
     if (selectedCartProducts.length > 0) {
-      fetchCoBoughtTogether(selectedCartProducts, datasetId);
+      fetchCoBoughtTogether(selectedCartProducts, datasetId, params);
     }
   }, [datasetId]);
 
@@ -481,7 +483,7 @@ const Analytics = () => {
     const p = searchParams.get('product');
     if (p) {
       setSelectedCartProducts([p]);
-      fetchCoBoughtTogether([p], datasetId);
+      fetchCoBoughtTogether([p], datasetId, params);
     }
   }, [searchParams, datasetId]);
 
@@ -607,8 +609,13 @@ const Analytics = () => {
     }
   };
 
-  const runMining = async (overrideParams = null) => {
-    setMiningStatus('mining');
+  const runMining = async (overrideParams = null, options = {}) => {
+    const isReactive = Boolean(options.isReactive);
+    if (isReactive) {
+      setIsRecomputing(true);
+    } else {
+      setMiningStatus('mining');
+    }
     try {
       const activeParams = { ...params, ...(overrideParams || {}) };
       const targetDatasetId = activeParams.dataset_id || datasetId || localStorage.getItem('activeDatasetId');
@@ -626,6 +633,9 @@ const Analytics = () => {
       };
       setResults(minedData);
       sessionStorage.setItem('analytics_results', JSON.stringify(minedData));
+      if (selectedCartProducts.length > 0) {
+        fetchCoBoughtTogether(selectedCartProducts, targetDatasetId, activeParams);
+      }
       if (targetDatasetId) {
         localStorage.setItem('activeDatasetId', String(targetDatasetId));
         const dsName = localStorage.getItem('activeDatasetName') || (file && file.name) || response.data.dataset_name || `Dataset #${targetDatasetId}`;
@@ -637,8 +647,12 @@ const Analytics = () => {
       setMiningStatus('success');
       setForceSetupView(false);
     } catch (err) {
-      setMiningStatus('error');
+      if (!isReactive) {
+        setMiningStatus('error');
+      }
       console.error('Error running mining:', err);
+    } finally {
+      setIsRecomputing(false);
     }
   };
 
@@ -911,10 +925,11 @@ const Analytics = () => {
           isOpen={showParamsModal}
           onClose={() => setShowParamsModal(false)}
           params={params}
-          onSaveAndRun={(newParams) => {
+          isRecomputing={isRecomputing}
+          onSaveAndRun={(newParams, options = {}) => {
             setParams(newParams);
             sessionStorage.setItem('analytics_params', JSON.stringify(newParams));
-            runMining(newParams);
+            runMining(newParams, options);
           }}
         />
       </div>
@@ -961,8 +976,8 @@ const Analytics = () => {
             onClick={() => setShowParamsModal(true)}
             title="Adjust algorithm thresholds"
           >
-            <Sliders size={13} />
-            <span>Parameters</span>
+            {isRecomputing ? <Loader2 size={13} className="spin" /> : <Sliders size={13} />}
+            <span>{isRecomputing ? 'Updating...' : 'Parameters'}</span>
           </button>
         </div>
       </div>
@@ -1026,6 +1041,7 @@ const Analytics = () => {
         onClearProducts={handleClearCartProducts}
         coBoughtResults={coBoughtResults}
         loadingCoBought={loadingCoBought}
+        params={params}
       />
 
       {/* ── 3. Bottom Section: Business Recommendations Advisory Engine ── */}
@@ -1038,10 +1054,11 @@ const Analytics = () => {
         isOpen={showParamsModal}
         onClose={() => setShowParamsModal(false)}
         params={params}
-        onSaveAndRun={(newParams) => {
+        isRecomputing={isRecomputing}
+        onSaveAndRun={(newParams, options = {}) => {
           setParams(newParams);
           sessionStorage.setItem('analytics_params', JSON.stringify(newParams));
-          runMining(newParams);
+          runMining(newParams, options);
         }}
       />
 

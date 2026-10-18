@@ -44,6 +44,7 @@ export const renderHighlightedPrefix = (text, query) => {
 const ItemFrequencies = ({
   stats,
   results,
+  params,
   selectedCategories = ['All'],
   selectedCategory = 'All',
   selectedProducts = [],
@@ -426,8 +427,13 @@ const ItemFrequencies = ({
               </p>
             </div>
           ) : coBoughtResults.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-dim)', fontSize: '0.8rem', fontStyle: 'italic' }}>
-              No frequently co-purchased items found for the selected product(s).
+            <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-dim)', fontSize: '0.8rem' }}>
+              <div style={{ fontStyle: 'italic', marginBottom: '0.35rem' }}>
+                No associated products meet the current parameter thresholds.
+              </div>
+              <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Lower the Minimum Support parameter to see more product pairings.
+              </p>
             </div>
           ) : (
             <div>
@@ -499,7 +505,7 @@ const ItemFrequencies = ({
                           </div>
                         </td>
                         <td className="col-metric" style={{ color: isFirst ? 'var(--primary-color)' : 'var(--text-main)', fontWeight: isFirst ? '800' : '700' }}>
-                          {count > 0 ? `${count.toLocaleString()} times` : '—'}
+                          <div>{count > 0 ? `${count.toLocaleString()} times` : '—'}</div>
                         </td>
                       </tr>
                     );
