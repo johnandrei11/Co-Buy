@@ -3445,6 +3445,21 @@ def admin_evaluations_datasets():
     ]
     return jsonify({'datasets': filtered})
 
+def safe_association_rules(frequent_itemsets, min_confidence):
+    if frequent_itemsets is None or (hasattr(frequent_itemsets, 'empty') and frequent_itemsets.empty):
+        return pd.DataFrame()
+    try:
+        df_items = pd.DataFrame(frequent_itemsets)
+        if 'itemsets' not in df_items.columns:
+            return pd.DataFrame()
+        # MLxtend association_rules requires at least one itemset of length >= 2
+        has_multi_items = any(len(s) >= 2 for s in df_items['itemsets'])
+        if not has_multi_items:
+            return pd.DataFrame()
+        return association_rules(df_items, metric="confidence", min_threshold=min_confidence)
+    except Exception:
+        return pd.DataFrame()
+
 @app.route('/api/admin/evaluations/benchmark', methods=['POST'])
 def admin_evaluations_benchmark():
     user_info, err = require_system_admin()
@@ -3552,17 +3567,13 @@ def admin_evaluations_benchmark():
                 t0_ap = time.time()
                 try:
                     ap_items = apriori(df, min_support=min_support, use_colnames=True)
-                    ap_time = round(time.time() - t0_ap, 4)
-                    _, ap_peak = tracemalloc.get_traced_memory()
-                    tracemalloc.stop()
-                    ap_rules = association_rules(ap_items, metric="confidence", min_threshold=min_confidence) if not ap_items.empty else pd.DataFrame()
                 except Exception:
-                    tracemalloc.stop()
-                    ap_time = 0.0
-                    ap_peak = 0
                     ap_items = pd.DataFrame()
-                    ap_rules = pd.DataFrame()
+                ap_time = round(time.time() - t0_ap, 4)
+                _, ap_peak = tracemalloc.get_traced_memory()
+                tracemalloc.stop()
                 ap_mem_kb = round(ap_peak / 1024, 2)
+                ap_rules = safe_association_rules(ap_items, min_confidence)
             else:
                 ap_time = 0.0
                 ap_mem_kb = 0.0
@@ -3575,17 +3586,13 @@ def admin_evaluations_benchmark():
                 t0_fp = time.time()
                 try:
                     fp_items = fpgrowth(df, min_support=min_support, use_colnames=True)
-                    fp_time = round(time.time() - t0_fp, 4)
-                    _, fp_peak = tracemalloc.get_traced_memory()
-                    tracemalloc.stop()
-                    fp_rules = association_rules(pd.DataFrame(fp_items), metric="confidence", min_threshold=min_confidence) if not fp_items.empty else pd.DataFrame()
                 except Exception:
-                    tracemalloc.stop()
-                    fp_time = 0.0
-                    fp_peak = 0
                     fp_items = pd.DataFrame()
-                    fp_rules = pd.DataFrame()
+                fp_time = round(time.time() - t0_fp, 4)
+                _, fp_peak = tracemalloc.get_traced_memory()
+                tracemalloc.stop()
                 fp_mem_kb = round(fp_peak / 1024, 2)
+                fp_rules = safe_association_rules(fp_items, min_confidence)
             else:
                 fp_time = 0.0
                 fp_mem_kb = 0.0
@@ -3636,23 +3643,30 @@ def admin_evaluations_benchmark():
         selected_pct = round((max(fpgrowth_selected_count, apriori_selected_count) / n) * 100, 1)
         mem_savings_pct = round(((avg_ap_mem - avg_fp_mem) / max(avg_ap_mem, 1)) * 100, 1) if avg_ap_mem > avg_fp_mem else 0
 
+        supp_pct = int(round(min_support * 100))
+        conf_pct = int(round(min_confidence * 100))
+
         if has_run_other:
             if overall_mined == 'FP-Growth':
                 reason = (
-                    f"Across all {len(breakdown)} platform datasets, FP-Growth was selected in {selected_pct}% of evaluations "
-                    f"({fpgrowth_selected_count} of {len(breakdown)} datasets) because it reduced peak memory by an average of {mem_savings_pct}% "
-                    f"({avg_fp_mem:,.2f} KB vs {avg_ap_mem:,.2f} KB) while achieving {speedup}x average speedup."
+                    f"Across all {len(breakdown)} platform datasets (evaluated at Min Support {supp_pct}%, Min Confidence {conf_pct}%), "
+                    f"FP-Growth was selected in {selected_pct}% of evaluations ({fpgrowth_selected_count} of {len(breakdown)} datasets) "
+                    f"because it reduced peak memory by an average of {mem_savings_pct}% ({avg_fp_mem:,.2f} KB vs {avg_ap_mem:,.2f} KB) "
+                    f"while achieving {speedup}x average speedup. "
+                    f"Generated {total_fp_rules} association rules from {total_fp_itemsets} frequent itemsets."
                 )
             else:
                 reason = (
-                    f"Across all {len(breakdown)} platform datasets, Apriori was selected in {selected_pct}% of evaluations "
-                    f"({apriori_selected_count} of {len(breakdown)} datasets) due to lower execution overhead on small transaction catalogs."
+                    f"Across all {len(breakdown)} platform datasets (evaluated at Min Support {supp_pct}%, Min Confidence {conf_pct}%), "
+                    f"Apriori was selected in {selected_pct}% of evaluations ({apriori_selected_count} of {len(breakdown)} datasets) "
+                    f"due to lower execution overhead on small transaction catalogs. "
+                    f"Generated {total_ap_rules} association rules from {total_ap_itemsets} frequent itemsets."
                 )
         else:
             reason = (
-                f"Platform-wide data mining evaluation for {overall_mined}. "
+                f"Platform-wide data mining evaluation for {overall_mined} (evaluated at Min Support {supp_pct}%, Min Confidence {conf_pct}%). "
                 f"The alternative algorithm ({other_mined}) has not been benchmarked yet. "
-                f"Click 'Run All Evaluations' or 'Run Benchmark' to execute the comparison benchmark."
+                f"Click 'Run All Evaluations' in the upper toolbar to execute the comparison benchmark."
             )
 
         return jsonify({
@@ -3737,8 +3751,7 @@ def admin_evaluations_benchmark():
     num_items = len(te.columns_)
 
     # Determine mined algorithm
-    # Datasets with < 500 transactions (such as BigBrew.xlsx with 480 transactions)
-    # are small transaction catalogs where Apriori is faster and preferred.
+    # Datasets with < 500 transactions are small catalogs where Apriori is preferred.
     if num_tx < 500:
         selected_algorithm = 'Apriori'
     elif mined_record and mined_record['algorithm']:
@@ -3768,19 +3781,15 @@ def admin_evaluations_benchmark():
         t0_apriori = time.time()
         try:
             apriori_itemsets = apriori(df, min_support=min_support, use_colnames=True)
-            apriori_time = round(time.time() - t0_apriori, 4)
-            _, apriori_peak_mem = tracemalloc.get_traced_memory()
-            tracemalloc.stop()
-            apriori_rules = association_rules(apriori_itemsets, metric="confidence", min_threshold=min_confidence) if not apriori_itemsets.empty else pd.DataFrame()
-            apriori_itemsets_count = len(apriori_itemsets)
-            apriori_rules_count = len(apriori_rules)
-            apriori_mem_kb = round(apriori_peak_mem / 1024, 2)
         except Exception:
-            tracemalloc.stop()
-            apriori_time = 0.0
-            apriori_mem_kb = 0.0
-            apriori_itemsets_count = 0
-            apriori_rules_count = 0
+            apriori_itemsets = pd.DataFrame()
+        apriori_time = round(time.time() - t0_apriori, 4)
+        _, apriori_peak_mem = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        apriori_mem_kb = round(apriori_peak_mem / 1024, 2)
+        apriori_rules = safe_association_rules(apriori_itemsets, min_confidence)
+        apriori_itemsets_count = len(apriori_itemsets)
+        apriori_rules_count = len(apriori_rules)
     else:
         apriori_time = 0.0
         apriori_mem_kb = 0.0
@@ -3793,19 +3802,15 @@ def admin_evaluations_benchmark():
         t0_fpgrowth = time.time()
         try:
             fpgrowth_itemsets = fpgrowth(df, min_support=min_support, use_colnames=True)
-            fpgrowth_time = round(time.time() - t0_fpgrowth, 4)
-            _, fpgrowth_peak_mem = tracemalloc.get_traced_memory()
-            tracemalloc.stop()
-            fpgrowth_rules = association_rules(pd.DataFrame(fpgrowth_itemsets), metric="confidence", min_threshold=min_confidence) if not fpgrowth_itemsets.empty else pd.DataFrame()
-            fpgrowth_itemsets_count = len(fpgrowth_itemsets)
-            fpgrowth_rules_count = len(fpgrowth_rules)
-            fpgrowth_mem_kb = round(fpgrowth_peak_mem / 1024, 2)
         except Exception:
-            tracemalloc.stop()
-            fpgrowth_time = 0.0
-            fpgrowth_mem_kb = 0.0
-            fpgrowth_itemsets_count = 0
-            fpgrowth_rules_count = 0
+            fpgrowth_itemsets = pd.DataFrame()
+        fpgrowth_time = round(time.time() - t0_fpgrowth, 4)
+        _, fpgrowth_peak_mem = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        fpgrowth_mem_kb = round(fpgrowth_peak_mem / 1024, 2)
+        fpgrowth_rules = safe_association_rules(fpgrowth_itemsets, min_confidence)
+        fpgrowth_itemsets_count = len(fpgrowth_itemsets)
+        fpgrowth_rules_count = len(fpgrowth_rules)
     else:
         fpgrowth_time = 0.0
         fpgrowth_mem_kb = 0.0
@@ -3815,24 +3820,29 @@ def admin_evaluations_benchmark():
     speedup = round(apriori_time / fpgrowth_time, 2) if fpgrowth_time > 0 and apriori_time > 0 else 1.0
 
     ds_name = ds_row['name']
+    supp_pct = int(round(min_support * 100))
+    conf_pct = int(round(min_confidence * 100))
+
     if has_run_other:
         if selected_algorithm == 'Apriori':
             selection_reason = (
-                f"The system selected Apriori for data mining on {ds_name} because it completed faster "
-                f"({apriori_time:.4f}s vs {fpgrowth_time:.4f}s) on this dataset ({num_tx:,} transactions) "
-                f"using level-wise candidate pruning without FP-Tree overhead."
+                f"Evaluation benchmark for {ds_name} ({num_tx:,} transactions, Min Support {supp_pct}%, Min Confidence {conf_pct}%): "
+                f"Apriori completed in {apriori_time:.4f}s (vs {fpgrowth_time:.4f}s for FP-Growth) "
+                f"with peak memory of {apriori_mem_kb:,.2f} KB (vs {fpgrowth_mem_kb:,.2f} KB). "
+                f"Generated {apriori_rules_count} association rules from {apriori_itemsets_count} frequent itemsets."
             )
         else:
             selection_reason = (
-                f"The system selected FP-Growth for data mining on {ds_name} because it reduced peak memory "
-                f"({fpgrowth_mem_kb:,.2f} KB vs {apriori_mem_kb:,.2f} KB) on this dataset ({num_tx:,} transactions) "
-                f"using compressed FP-Tree structure."
+                f"Evaluation benchmark for {ds_name} ({num_tx:,} transactions, Min Support {supp_pct}%, Min Confidence {conf_pct}%): "
+                f"FP-Growth used {fpgrowth_mem_kb:,.2f} KB peak memory (vs {apriori_mem_kb:,.2f} KB for Apriori) "
+                f"and completed in {fpgrowth_time:.4f}s (vs {apriori_time:.4f}s). "
+                f"Generated {fpgrowth_rules_count} association rules from {fpgrowth_itemsets_count} frequent itemsets."
             )
     else:
         selection_reason = (
-            f"The system originally used {selected_algorithm} for data mining on {ds_name} ({num_tx:,} transactions). "
+            f"The system used {selected_algorithm} for data mining on {ds_name} ({num_tx:,} transactions, Min Support {supp_pct}%, Min Confidence {conf_pct}%). "
             f"The alternative algorithm ({other_algorithm}) has not been benchmarked yet. "
-            f"Click 'Run Benchmark' to execute the comparison."
+            f"Click 'Run Benchmark' in the upper toolbar to execute the comparison."
         )
 
     return jsonify({
@@ -3850,16 +3860,16 @@ def admin_evaluations_benchmark():
         'has_run_other': has_run_other,
         'selection_reason': selection_reason,
         'apriori': {
-            'execution_time_seconds': apriori_time,
-            'peak_memory_kb': apriori_mem_kb,
-            'frequent_itemsets': apriori_itemsets_count,
-            'rules_generated': apriori_rules_count
+            'execution_time_seconds': apriori_time if (has_run_other or selected_algorithm == 'Apriori') else 0.0,
+            'peak_memory_kb': apriori_mem_kb if (has_run_other or selected_algorithm == 'Apriori') else 0.0,
+            'frequent_itemsets': apriori_itemsets_count if (has_run_other or selected_algorithm == 'Apriori') else 0,
+            'rules_generated': apriori_rules_count if (has_run_other or selected_algorithm == 'Apriori') else 0
         },
         'fpgrowth': {
-            'execution_time_seconds': fpgrowth_time,
-            'peak_memory_kb': fpgrowth_mem_kb,
-            'frequent_itemsets': fpgrowth_itemsets_count,
-            'rules_generated': fpgrowth_rules_count
+            'execution_time_seconds': fpgrowth_time if (has_run_other or selected_algorithm == 'FP-Growth') else 0.0,
+            'peak_memory_kb': fpgrowth_mem_kb if (has_run_other or selected_algorithm == 'FP-Growth') else 0.0,
+            'frequent_itemsets': fpgrowth_itemsets_count if (has_run_other or selected_algorithm == 'FP-Growth') else 0,
+            'rules_generated': fpgrowth_rules_count if (has_run_other or selected_algorithm == 'FP-Growth') else 0
         },
         'comparison': {
             'speedup_factor': speedup if has_run_other else 1.0,

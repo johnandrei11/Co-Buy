@@ -159,10 +159,10 @@ export default function AdminEvaluations() {
   const isMinedActive = activeAlgo === minedAlgo;
 
   // Active metrics when viewing single algorithm
-  const activeTime = activeAlgo === 'Apriori' ? aprioriTime : fpgrowthTime;
-  const activeMem = activeAlgo === 'Apriori' ? aprioriMem : fpgrowthMem;
-  const activeRules = activeAlgo === 'Apriori' ? aprioriRules : fpgrowthRules;
-  const activeItemsets = activeAlgo === 'Apriori' ? aprioriItemsets : fpgrowthItemsets;
+  const activeTime = (!isMinedActive && !hasRunOther) ? 0 : (activeAlgo === 'Apriori' ? aprioriTime : fpgrowthTime);
+  const activeMem = (!isMinedActive && !hasRunOther) ? 0 : (activeAlgo === 'Apriori' ? aprioriMem : fpgrowthMem);
+  const activeRules = (!isMinedActive && !hasRunOther) ? 0 : (activeAlgo === 'Apriori' ? aprioriRules : fpgrowthRules);
+  const activeItemsets = (!isMinedActive && !hasRunOther) ? 0 : (activeAlgo === 'Apriori' ? aprioriItemsets : fpgrowthItemsets);
 
   // Normalized scaling for horizontal bars
   const maxTime = Math.max(aprioriTime, fpgrowthTime, 0.0001);
@@ -188,10 +188,17 @@ export default function AdminEvaluations() {
   const isFpGrowthLessMem = fpgrowthMem < aprioriMem;
   const isAprioriLessMem = aprioriMem < fpgrowthMem;
 
+  const currentSuppPct = Math.round((results?.parameters?.min_support ?? (parseFloat(minSupport) || 5) / 100) * 100);
+  const currentConfPct = Math.round((results?.parameters?.min_confidence ?? (parseFloat(minConfidence) || 50) / 100) * 100);
+
   const speedText = isAprioriFaster ? 'Apriori is faster.' : isFpGrowthFaster ? 'FP-Growth is faster.' : 'Same execution speed.';
   const memoryText = isFpGrowthLessMem ? 'FP-Growth uses less memory.' : isAprioriLessMem ? 'Apriori uses less memory.' : 'Same memory footprint.';
-  const rulesText = aprioriRules === fpgrowthRules ? 'Same number of rules.' : `${aprioriRules.toLocaleString()} vs ${fpgrowthRules.toLocaleString()} rules.`;
-  const itemsetsText = aprioriItemsets === fpgrowthItemsets ? 'Same number of frequent itemsets.' : `${aprioriItemsets.toLocaleString()} vs ${fpgrowthItemsets.toLocaleString()} itemsets.`;
+  const rulesText = (aprioriRules === 0 && fpgrowthRules === 0)
+    ? `0 rules generated (${currentSuppPct}% support, ${currentConfPct}% confidence).`
+    : (aprioriRules === fpgrowthRules ? 'Same number of rules.' : `${aprioriRules.toLocaleString()} vs ${fpgrowthRules.toLocaleString()} rules.`);
+  const itemsetsText = (aprioriItemsets === 0 && fpgrowthItemsets === 0)
+    ? `0 frequent itemsets (${currentSuppPct}% support threshold).`
+    : (aprioriItemsets === fpgrowthItemsets ? 'Same number of frequent itemsets.' : `${aprioriItemsets.toLocaleString()} vs ${fpgrowthItemsets.toLocaleString()} itemsets.`);
 
   const defaultExplanation = selectedAlgo === 'FP-Growth'
     ? `The system selected FP-Growth because it uses significantly less memory (${fpgrowthMem.toLocaleString('en-US', { maximumFractionDigits: 2 })} KB vs ${aprioriMem.toLocaleString('en-US', { maximumFractionDigits: 2 })} KB) while still producing the same number of rules and itemsets.`
@@ -224,15 +231,35 @@ export default function AdminEvaluations() {
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', paddingBottom: '2.5rem' }}>
       {/* 1. Header */}
-      <div style={{ marginBottom: '1.5rem' }}>
-        <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--admin-text-primary)', margin: 0, fontFamily: 'var(--font-heading)' }}>
-          Evaluation Results
-        </h2>
-        <p style={{ margin: '0.35rem 0 0', fontSize: '0.84rem', color: 'var(--admin-text-muted)' }}>
-          {isOverall
-            ? "Platform-wide meta-benchmark across all enterprise datasets, analyzing overall algorithm adoption, execution speed, and memory efficiency."
-            : "Here's a clear comparison of Apriori and FP-Growth on your dataset, with key insights and recommendations."}
-        </p>
+      <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+        <div>
+          <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--admin-text-primary)', margin: 0, fontFamily: 'var(--font-heading)' }}>
+            Evaluation Results
+          </h2>
+          <p style={{ margin: '0.35rem 0 0', fontSize: '0.84rem', color: 'var(--admin-text-muted)' }}>
+            {isOverall
+              ? "Platform-wide meta-benchmark across all enterprise datasets, analyzing overall algorithm adoption, execution speed, and memory efficiency."
+              : "Here's a clear comparison of Apriori and FP-Growth on your dataset, with key insights and recommendations."}
+          </p>
+        </div>
+        {results?.parameters && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '6px 12px',
+            borderRadius: '8px',
+            background: 'var(--admin-input)',
+            border: '1px solid var(--admin-input-border)',
+            fontSize: '0.76rem',
+            color: 'var(--admin-text-secondary)'
+          }}>
+            <Sparkles size={13} color="#60a5fa" />
+            <span>
+              Active Thresholds: <strong style={{ color: '#38bdf8' }}>{Math.round(results.parameters.min_support * 100)}%</strong> Min Support • <strong style={{ color: '#34d399' }}>{Math.round(results.parameters.min_confidence * 100)}%</strong> Min Confidence
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Dataset & Parameter Benchmark Controls Toolbar */}
@@ -583,7 +610,7 @@ export default function AdminEvaluations() {
             <div style={{ marginTop: '0.85rem', borderTop: '1px solid var(--admin-card-border)', paddingTop: '0.75rem' }}>
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
                 <div style={{ fontSize: '1.45rem', fontWeight: 900, color: activeAlgo === 'FP-Growth' ? '#34d399' : '#38bdf8', letterSpacing: '-0.02em' }}>
-                  {`${activeTime.toFixed(4)}s`}
+                  {(!isMinedActive && !hasRunOther) ? '0.0000s' : `${activeTime.toFixed(4)}s`}
                 </div>
                 <span style={{
                   fontSize: '0.68rem',
@@ -1042,31 +1069,9 @@ export default function AdminEvaluations() {
               <h4 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--admin-text-primary)', margin: '0 0 0.5rem' }}>
                 {otherAlgo} Benchmark Pending
               </h4>
-              <p style={{ fontSize: '0.82rem', color: 'var(--admin-text-muted)', maxWidth: '520px', margin: '0 auto 1.25rem' }}>
-                The original data mining execution used <strong>{minedAlgo}</strong>. To benchmark <strong>{otherAlgo}</strong> and view execution runtime and memory usage, click the button below.
+              <p style={{ fontSize: '0.82rem', color: 'var(--admin-text-muted)', maxWidth: '540px', margin: '0 auto', lineHeight: 1.6 }}>
+                The original data mining execution used <strong>{minedAlgo}</strong>. To benchmark <strong>{otherAlgo}</strong> and view execution runtime and memory usage, click <strong>"{isOverall ? 'Run All Evaluations' : 'Run Benchmark'}"</strong> in the upper toolbar above.
               </p>
-              <button
-                type="button"
-                onClick={handleRunBenchmark}
-                disabled={running}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '0.55rem 1.25rem',
-                  background: otherAlgo === 'FP-Growth' ? '#059669' : '#2563eb',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '0.84rem',
-                  fontWeight: 600,
-                  cursor: running ? 'not-allowed' : 'pointer',
-                  boxShadow: '0 2px 8px rgba(37, 99, 235, 0.25)'
-                }}
-              >
-                <Play size={15} fill="#ffffff" />
-                <span>{isOverall ? 'Run All Evaluations' : 'Run Benchmark'}</span>
-              </button>
             </div>
           ) : (
             <div style={{
@@ -1332,31 +1337,9 @@ export default function AdminEvaluations() {
               <h4 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--admin-text-primary)', margin: '0 0 0.5rem' }}>
                 Side-by-Side Comparison Pending
               </h4>
-              <p style={{ fontSize: '0.82rem', color: 'var(--admin-text-muted)', maxWidth: '520px', margin: '0 auto 1.25rem' }}>
-                Comparison requires benchmarking both algorithms under identical thresholds. Click below to benchmark both algorithms and view execution speedup, memory savings, and rule agreement.
+              <p style={{ fontSize: '0.82rem', color: 'var(--admin-text-muted)', maxWidth: '540px', margin: '0 auto', lineHeight: 1.6 }}>
+                Comparison requires benchmarking both algorithms under identical thresholds. Click <strong>"{isOverall ? 'Run All Evaluations' : 'Run Benchmark'}"</strong> in the upper toolbar above to compare execution speedup, memory savings, and rule agreement.
               </p>
-              <button
-                type="button"
-                onClick={handleRunBenchmark}
-                disabled={running}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '0.55rem 1.25rem',
-                  background: '#7c3aed',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '0.84rem',
-                  fontWeight: 600,
-                  cursor: running ? 'not-allowed' : 'pointer',
-                  boxShadow: '0 2px 8px rgba(124, 58, 237, 0.3)'
-                }}
-              >
-                <Play size={15} fill="#ffffff" />
-                <span>{isOverall ? 'Run All Evaluations' : 'Run Benchmark'}</span>
-              </button>
             </div>
           ) : (
             <div style={{
@@ -1634,13 +1617,19 @@ export default function AdminEvaluations() {
                   <div>
                     <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--admin-text-primary)' }}>
                       {isOverall
-                        ? `100% Rule Consistency across all ${results?.total_datasets || 0} datasets`
+                        ? ((aprioriRules === 0 && fpgrowthRules === 0)
+                            ? `0 Rules generated platform-wide (${currentSuppPct}% min support, ${currentConfPct}% confidence)`
+                            : `100% Rule Consistency across all ${results?.total_datasets || 0} datasets`)
                         : rulesText}
                     </div>
                     <div style={{ fontSize: '0.73rem', color: 'var(--admin-text-muted)', marginTop: '2px' }}>
                       {isOverall
-                        ? 'Both algorithms produced identical rules for every dataset evaluated.'
-                        : `Both algorithms generated ${aprioriRules.toLocaleString()} rules and ${aprioriItemsets.toLocaleString()} frequent itemsets.`}
+                        ? ((aprioriRules === 0 && fpgrowthRules === 0)
+                            ? `Strict thresholds (${currentSuppPct}% support / ${currentConfPct}% confidence). No item combinations met this cutoff.`
+                            : 'Both algorithms produced identical rules for every dataset evaluated.')
+                        : ((aprioriRules === 0 && fpgrowthRules === 0)
+                            ? `Both algorithms accurately confirmed 0 rules meet the ${currentSuppPct}% support and ${currentConfPct}% confidence criteria.`
+                            : `Both algorithms generated ${aprioriRules.toLocaleString()} rules and ${aprioriItemsets.toLocaleString()} frequent itemsets.`)}
                     </div>
                   </div>
                 </div>
