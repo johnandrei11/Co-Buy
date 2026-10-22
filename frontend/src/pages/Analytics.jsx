@@ -54,8 +54,8 @@ const Analytics = () => {
   const [params, setParams] = useState(() => {
     const saved = sessionStorage.getItem('analytics_params');
     return saved ? JSON.parse(saved) : {
-      min_support: 0.05,
-      min_confidence: 0.5,
+      min_support: 0.01,
+      min_confidence: 0.1,
       min_lift: 1.0,
       algorithm: 'auto'
     };

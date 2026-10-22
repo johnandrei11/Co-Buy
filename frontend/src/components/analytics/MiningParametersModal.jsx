@@ -51,8 +51,8 @@ const MiningParametersModal = ({
 
   const handleResetDefaults = () => {
     const defaults = {
-      min_support: 0.05,
-      min_confidence: 0.5,
+      min_support: 0.01,
+      min_confidence: 0.1,
       min_lift: 1.0,
       algorithm: 'auto'
     };

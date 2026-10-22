@@ -137,13 +137,44 @@ const ItemFrequencies = ({
     .sort((a, b) => (b.count || b.quantity || b.value || 0) - (a.count || a.quantity || a.value || 0))
     .slice(0, 10);
 
-  // 3. Associated Products pagination (displays all items bought together with selected cart products)
-  const associatedItems = Array.isArray(coBoughtResults) ? coBoughtResults : [];
+  // 3. Associated Products pagination (filters accurately based on user parameter metrics)
+  const associatedItems = useMemo(() => {
+    if (!Array.isArray(coBoughtResults)) return [];
+    const minSupp = params?.min_support != null ? parseFloat(params.min_support) : null;
+    const minConf = params?.min_confidence != null ? parseFloat(params.min_confidence) : null;
+    const minLift = params?.min_lift != null ? parseFloat(params.min_lift) : null;
 
-  // Reset pagination if product selection changes
+    return coBoughtResults.filter(item => {
+      // 1. Min Support (Commonness)
+      if (minSupp !== null && !isNaN(minSupp) && minSupp > 0) {
+        const itemGlobalSupp = item.global_support ?? item.support ?? 0;
+        const itemCartSupp = item.cart_support ?? (item.percentage ? item.percentage / 100 : 0);
+        if (itemGlobalSupp < minSupp && itemCartSupp < minSupp) {
+          return false;
+        }
+      }
+      // 2. Min Confidence (Likelihood given cart)
+      if (minConf !== null && !isNaN(minConf) && minConf > 0) {
+        const itemConf = item.confidence ?? (item.percentage ? item.percentage / 100 : 0);
+        if (itemConf < minConf) {
+          return false;
+        }
+      }
+      // 3. Min Lift (Pairing Strength)
+      if (minLift !== null && !isNaN(minLift) && minLift > 1.0) {
+        const itemLift = item.lift ?? 1.0;
+        if (itemLift < minLift) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [coBoughtResults, params?.min_support, params?.min_confidence, params?.min_lift]);
+
+  // Reset pagination if product selection or parameters change
   useEffect(() => {
     setAssocPage(1);
-  }, [selectedList.length]);
+  }, [params?.min_support, params?.min_confidence, params?.min_lift, selectedList.length]);
 
   const totalAssoc = associatedItems.length;
   const totalAssocPages = Math.max(1, Math.ceil(totalAssoc / assocPageSize));
@@ -436,10 +467,12 @@ const ItemFrequencies = ({
           ) : totalAssoc === 0 ? (
             <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-dim)', fontSize: '0.8rem' }}>
               <div style={{ fontStyle: 'italic', marginBottom: '0.35rem', fontWeight: 600, color: 'var(--text-main)' }}>
-                No associated products found.
+                {coBoughtResults.length > 0 ? 'No products meet the current parameter criteria.' : 'No associated products found.'}
               </div>
               <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                No other items were purchased together with this selection.
+                {coBoughtResults.length > 0
+                  ? 'Try lowering the metrics in Parameters above to reveal more product pairings.'
+                  : 'No other items were purchased together with this selection.'}
               </p>
             </div>
           ) : (
