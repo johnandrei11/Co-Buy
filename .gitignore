@@ -28,4 +28,4 @@ backend/backend_out.txt
 
 # Database
 *.db
-backend/database.db
+!backend/database.db
