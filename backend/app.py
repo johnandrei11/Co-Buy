@@ -1736,7 +1736,7 @@ def get_stats():
     ]
     
     unique_items_count = len(item_counts)
-    recommended = 'FP-Growth' if total_transactions >= 500 or unique_items_count >= 50 else 'Apriori'
+    recommended = 'FP-Growth' if total_transactions >= 500 else 'Apriori'
 
     # Compute dataset health metrics using direct date query without loading all transaction items
     distinct_dates = db.get_distinct_dates_for_dataset(user_email=user_email, dataset_id=dataset_id)
@@ -3458,8 +3458,8 @@ def admin_evaluations_benchmark():
 
     min_support = float(data.get('min_support', 0.05))
     min_confidence = float(data.get('min_confidence', 0.50))
-    algorithm_mode = str(data.get('algorithm_mode', 'mined')).strip().lower()
-    has_run_other = algorithm_mode in ('other', 'alternative', 'both')
+    algorithm_mode = str(data.get('algorithm_mode', 'both')).strip().lower()
+    has_run_other = True
 
     if str(dataset_id).lower() == 'all':
         conn = db.get_db_connection()
@@ -3520,32 +3520,27 @@ def admin_evaluations_benchmark():
             num_tx = ds['transaction_count'] or len(txs)
             num_it = ds['unique_items'] or len(te.columns_)
 
-            if mined_record and mined_record['algorithm']:
+            if num_tx < 500:
+                ds_algo = 'Apriori'
+            elif mined_record and mined_record['algorithm']:
                 raw_mined = mined_record['algorithm'].strip().lower()
                 if raw_mined == 'apriori':
                     ds_algo = 'Apriori'
                 elif raw_mined in ('fpgrowth', 'fp-growth'):
                     ds_algo = 'FP-Growth'
                 else:
-                    ds_algo = 'FP-Growth' if num_tx >= 10000 or (num_tx >= 500 and num_it >= 30) else 'Apriori'
+                    ds_algo = 'FP-Growth' if num_tx >= 500 else 'Apriori'
             else:
-                if num_tx >= 10000 or (num_tx >= 500 and num_it >= 30):
-                    ds_algo = 'FP-Growth'
-                else:
-                    ds_algo = 'Apriori'
+                ds_algo = 'FP-Growth' if num_tx >= 500 else 'Apriori'
 
             if ds_algo == 'FP-Growth':
                 fpgrowth_selected_count += 1
             else:
                 apriori_selected_count += 1
 
-            # Check which algorithms to run
-            if has_run_other or algorithm_mode in ('other', 'alternative', 'both'):
-                run_ap = True
-                run_fp = True
-            else:  # 'mined'
-                run_ap = (ds_algo == 'Apriori')
-                run_fp = (ds_algo == 'FP-Growth')
+            # Always run both algorithms for complete evaluation and comparison
+            run_ap = True
+            run_fp = True
 
             # Apriori
             if run_ap:
@@ -3738,24 +3733,26 @@ def admin_evaluations_benchmark():
     num_items = len(te.columns_)
 
     # Determine mined algorithm
-    if mined_record and mined_record['algorithm']:
+    # Datasets with < 500 transactions (such as BigBrew.xlsx with 480 transactions)
+    # are small transaction catalogs where Apriori is faster and preferred.
+    if num_tx < 500:
+        selected_algorithm = 'Apriori'
+    elif mined_record and mined_record['algorithm']:
         raw_mined = mined_record['algorithm'].strip().lower()
         if raw_mined == 'apriori':
             selected_algorithm = 'Apriori'
         elif raw_mined in ('fpgrowth', 'fp-growth'):
             selected_algorithm = 'FP-Growth'
         else:
-            selected_algorithm = 'FP-Growth' if num_tx >= 10000 or (num_tx >= 500 and num_items >= 30) else 'Apriori'
+            selected_algorithm = 'FP-Growth' if num_tx >= 500 else 'Apriori'
     else:
-        if num_tx >= 10000 or (num_tx >= 500 and num_items >= 30):
-            selected_algorithm = 'FP-Growth'
-        else:
-            selected_algorithm = 'Apriori'
+        selected_algorithm = 'FP-Growth' if num_tx >= 500 else 'Apriori'
 
     other_algorithm = 'FP-Growth' if selected_algorithm == 'Apriori' else 'Apriori'
 
-    run_apriori = True if has_run_other else (selected_algorithm == 'Apriori')
-    run_fpgrowth = True if has_run_other else (selected_algorithm == 'FP-Growth')
+    # Always benchmark both algorithms for complete evaluation and comparison
+    run_apriori = True
+    run_fpgrowth = True
 
     # 1. Benchmark Apriori
     if run_apriori:
