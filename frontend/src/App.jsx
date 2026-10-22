@@ -48,6 +48,7 @@ import AdminAuditLogs from './pages/admin/AdminAuditLogs';
 import AdminSettings from './pages/admin/AdminSettings';
 import AdminProfile from './pages/admin/AdminProfile';
 import { AdminThemeProvider } from './context/AdminThemeContext';
+import ErrorBoundary from './components/ErrorBoundary';
 import './index.css';
 import axios from 'axios';
 import { API_BASE } from './config/api';
@@ -769,17 +770,19 @@ function App() {
                 {showInvitePanel && (
                   <InvitePanel user={user} onClose={() => setShowInvitePanel(false)} />
                 )}
-                <Routes>
-                  <Route path="/dashboard" element={<Dashboard />} />
-                  <Route path="/analytics" element={<Analytics />} />
-                  <Route path="/evaluation" element={<Evaluation />} />
-                  <Route path="/history" element={<Dataset />} />
-                  <Route path="/data" element={<Navigate to="/history" replace />} />
-                  <Route path="/audit-log" element={<Navigate to="/dashboard" replace />} />
-                  <Route path="/settings" element={<SettingsPage user={user} theme={theme} onThemeChange={setTheme} />} />
-                  <Route path="/profile" element={<Profile user={user} />} />
-                  <Route path="*" element={<Navigate to="/dashboard" replace />} />
-                </Routes>
+                <ErrorBoundary>
+                  <Routes>
+                    <Route path="/dashboard" element={<Dashboard />} />
+                    <Route path="/analytics" element={<Analytics />} />
+                    <Route path="/evaluation" element={<Evaluation />} />
+                    <Route path="/history" element={<Dataset />} />
+                    <Route path="/data" element={<Navigate to="/history" replace />} />
+                    <Route path="/audit-log" element={<Navigate to="/dashboard" replace />} />
+                    <Route path="/settings" element={<SettingsPage user={user} theme={theme} onThemeChange={setTheme} />} />
+                    <Route path="/profile" element={<Profile user={user} />} />
+                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                  </Routes>
+                </ErrorBoundary>
               </UserLayout>
             }
           />
