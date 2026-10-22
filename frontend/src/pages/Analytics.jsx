@@ -424,6 +424,12 @@ const Analytics = () => {
       if (activeParams?.min_support !== undefined && activeParams?.min_support !== null) {
         queryParams.append('min_support', activeParams.min_support);
       }
+      if (activeParams?.min_confidence !== undefined && activeParams?.min_confidence !== null) {
+        queryParams.append('min_confidence', activeParams.min_confidence);
+      }
+      if (activeParams?.min_lift !== undefined && activeParams?.min_lift !== null) {
+        queryParams.append('min_lift', activeParams.min_lift);
+      }
       const response = await axios.get(`${API_BASE}/frequently_bought_together?${queryParams.toString()}`);
       if (response.data && Array.isArray(response.data.frequently_bought_together)) {
         setCoBoughtResults(response.data.frequently_bought_together);
@@ -474,6 +480,13 @@ const Analytics = () => {
       fetchCoBoughtTogether(selectedCartProducts, datasetId, params);
     }
   }, [datasetId]);
+
+  // Re-filter/re-fetch associated products whenever mining parameters (support, confidence, lift) change
+  useEffect(() => {
+    if (selectedCartProducts.length > 0) {
+      fetchCoBoughtTogether(selectedCartProducts, datasetId, params);
+    }
+  }, [params?.min_support, params?.min_confidence, params?.min_lift]);
 
   useEffect(() => {
     const s = searchParams.get('search');
@@ -929,6 +942,9 @@ const Analytics = () => {
           onSaveAndRun={(newParams, options = {}) => {
             setParams(newParams);
             sessionStorage.setItem('analytics_params', JSON.stringify(newParams));
+            if (selectedCartProducts.length > 0) {
+              fetchCoBoughtTogether(selectedCartProducts, datasetId, newParams);
+            }
             runMining(newParams, options);
           }}
         />
@@ -1058,6 +1074,9 @@ const Analytics = () => {
         onSaveAndRun={(newParams, options = {}) => {
           setParams(newParams);
           sessionStorage.setItem('analytics_params', JSON.stringify(newParams));
+          if (selectedCartProducts.length > 0) {
+            fetchCoBoughtTogether(selectedCartProducts, datasetId, newParams);
+          }
           runMining(newParams, options);
         }}
       />

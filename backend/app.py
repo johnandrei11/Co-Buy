@@ -1945,9 +1945,18 @@ def get_frequently_bought_together():
         item_base_support = (item_total_counts.get(name_lower, 0) / total_tx) if total_tx > 0 else 0.0
         pair_lift = (pair_confidence / item_base_support) if item_base_support > 0 else 1.0
 
-        # Parameter binding filters: relative co-occurrence support within matching baskets
-        if min_supp_threshold is not None and cart_relative_support < min_supp_threshold:
-            continue
+        # Parameter binding filters: support, confidence, and lift
+        if min_supp_threshold is not None:
+            if global_pair_support < min_supp_threshold and cart_relative_support < min_supp_threshold:
+                continue
+
+        if min_conf_threshold is not None:
+            if pair_confidence < min_conf_threshold:
+                continue
+
+        if min_lift_threshold is not None:
+            if pair_lift < min_lift_threshold:
+                continue
 
         results.append({
             'product_name': name,
@@ -1955,7 +1964,8 @@ def get_frequently_bought_together():
             'count': count,
             'category': cat_map.get(name, 'Uncategorized'),
             'percentage': round((count / matched_tx_count * 100), 1) if matched_tx_count > 0 else 0,
-            'support': round(cart_relative_support, 4),
+            'support': round(global_pair_support, 4),
+            'cart_support': round(cart_relative_support, 4),
             'global_support': round(global_pair_support, 4),
             'confidence': round(pair_confidence, 4),
             'lift': round(pair_lift, 2)
