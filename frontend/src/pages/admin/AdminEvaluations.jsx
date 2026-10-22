@@ -41,8 +41,8 @@ export default function AdminEvaluations() {
         const res = await axios.get(`${API_BASE}/admin/evaluations/datasets`);
         const list = res.data.datasets || [];
         setDatasets(list);
-        // Automatically load evaluation on "all" (Overall Evaluation) by default with mined algorithm only
-        runBenchmarkForId('all', 5, 50, 'mined');
+        // Automatically load evaluation on "all" (Overall Evaluation) by default with both algorithms
+        runBenchmarkForId('all', 5, 50, 'both');
       } catch (err) {
         console.error('Failed to load evaluation datasets:', err);
       }
@@ -123,7 +123,8 @@ export default function AdminEvaluations() {
   };
 
   const handleRunBenchmark = async (e) => {
-    if (e) e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
+    if (e && e.stopPropagation) e.stopPropagation();
     if (!selectedDatasetId) {
       alert('Please select a dataset to benchmark.');
       return;
@@ -271,7 +272,14 @@ export default function AdminEvaluations() {
         marginBottom: '1.75rem',
         boxShadow: 'var(--admin-shadow)'
       }}>
-        <form onSubmit={handleRunBenchmark} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', alignItems: 'flex-end' }}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleRunBenchmark(e);
+          }}
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', alignItems: 'flex-end' }}
+        >
           <div>
             <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 600, color: 'var(--admin-text-secondary)', marginBottom: '4px' }}>
               Benchmark Dataset
@@ -281,8 +289,7 @@ export default function AdminEvaluations() {
               onChange={(e) => {
                 const newId = e.target.value;
                 setSelectedDatasetId(newId);
-                setSelectedAlgorithmView('mined');
-                runBenchmarkForId(newId, minSupport, minConfidence);
+                runBenchmarkForId(newId, minSupport, minConfidence, 'both');
               }}
               style={{
                 width: '100%',
@@ -364,7 +371,8 @@ export default function AdminEvaluations() {
 
           <div>
             <button
-              type="submit"
+              type="button"
+              onClick={handleRunBenchmark}
               disabled={running}
               style={{
                 width: '100%',
@@ -519,7 +527,12 @@ export default function AdminEvaluations() {
 
           <button
             type="button"
-            onClick={() => setSelectedAlgorithmView('other')}
+            onClick={() => {
+              setSelectedAlgorithmView('other');
+              if (!hasRunOther && !running) {
+                runBenchmarkForId(selectedDatasetId, minSupport, minConfidence, 'both');
+              }
+            }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -542,7 +555,12 @@ export default function AdminEvaluations() {
 
           <button
             type="button"
-            onClick={() => setSelectedAlgorithmView('both')}
+            onClick={() => {
+              setSelectedAlgorithmView('both');
+              if (!hasRunOther && !running) {
+                runBenchmarkForId(selectedDatasetId, minSupport, minConfidence, 'both');
+              }
+            }}
             style={{
               display: 'flex',
               alignItems: 'center',

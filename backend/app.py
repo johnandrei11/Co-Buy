@@ -3470,8 +3470,8 @@ def admin_evaluations_benchmark():
 
     min_support = float(data.get('min_support', 0.05))
     min_confidence = float(data.get('min_confidence', 0.50))
-    algorithm_mode = str(data.get('algorithm_mode', 'mined')).strip().lower()
-    has_run_other = (algorithm_mode == 'both')
+    algorithm_mode = str(data.get('algorithm_mode', 'both')).strip().lower()
+    has_run_other = (algorithm_mode != 'mined_only')
 
     if str(dataset_id).lower() == 'all':
         conn = db.get_db_connection()
@@ -3566,10 +3566,10 @@ def admin_evaluations_benchmark():
                     ap_items = apriori(df, min_support=min_support, use_colnames=True)
                 except Exception:
                     ap_items = pd.DataFrame()
-                ap_time = round(time.time() - t0_ap, 4)
+                ap_time = max(round(time.time() - t0_ap, 4), 0.0001)
                 _, ap_peak = tracemalloc.get_traced_memory()
                 tracemalloc.stop()
-                ap_mem_kb = round(ap_peak / 1024, 2)
+                ap_mem_kb = max(round(ap_peak / 1024, 2), 0.01)
                 ap_rules = safe_association_rules(ap_items, min_confidence)
             else:
                 ap_time = 0.0
@@ -3585,10 +3585,10 @@ def admin_evaluations_benchmark():
                     fp_items = fpgrowth(df, min_support=min_support, use_colnames=True)
                 except Exception:
                     fp_items = pd.DataFrame()
-                fp_time = round(time.time() - t0_fp, 4)
+                fp_time = max(round(time.time() - t0_fp, 4), 0.0001)
                 _, fp_peak = tracemalloc.get_traced_memory()
                 tracemalloc.stop()
-                fp_mem_kb = round(fp_peak / 1024, 2)
+                fp_mem_kb = max(round(fp_peak / 1024, 2), 0.01)
                 fp_rules = safe_association_rules(fp_items, min_confidence)
             else:
                 fp_time = 0.0
@@ -3780,10 +3780,10 @@ def admin_evaluations_benchmark():
             apriori_itemsets = apriori(df, min_support=min_support, use_colnames=True)
         except Exception:
             apriori_itemsets = pd.DataFrame()
-        apriori_time = round(time.time() - t0_apriori, 4)
+        apriori_time = max(round(time.time() - t0_apriori, 4), 0.0001)
         _, apriori_peak_mem = tracemalloc.get_traced_memory()
         tracemalloc.stop()
-        apriori_mem_kb = round(apriori_peak_mem / 1024, 2)
+        apriori_mem_kb = max(round(apriori_peak_mem / 1024, 2), 0.01)
         apriori_rules = safe_association_rules(apriori_itemsets, min_confidence)
         apriori_itemsets_count = len(apriori_itemsets)
         apriori_rules_count = len(apriori_rules)
@@ -3801,10 +3801,10 @@ def admin_evaluations_benchmark():
             fpgrowth_itemsets = fpgrowth(df, min_support=min_support, use_colnames=True)
         except Exception:
             fpgrowth_itemsets = pd.DataFrame()
-        fpgrowth_time = round(time.time() - t0_fpgrowth, 4)
+        fpgrowth_time = max(round(time.time() - t0_fpgrowth, 4), 0.0001)
         _, fpgrowth_peak_mem = tracemalloc.get_traced_memory()
         tracemalloc.stop()
-        fpgrowth_mem_kb = round(fpgrowth_peak_mem / 1024, 2)
+        fpgrowth_mem_kb = max(round(fpgrowth_peak_mem / 1024, 2), 0.01)
         fpgrowth_rules = safe_association_rules(fpgrowth_itemsets, min_confidence)
         fpgrowth_itemsets_count = len(fpgrowth_itemsets)
         fpgrowth_rules_count = len(fpgrowth_rules)
