@@ -1945,19 +1945,6 @@ def get_frequently_bought_together():
         item_base_support = (item_total_counts.get(name_lower, 0) / total_tx) if total_tx > 0 else 0.0
         pair_lift = (pair_confidence / item_base_support) if item_base_support > 0 else 1.0
 
-        # Parameter binding filters: support, confidence, and lift
-        if min_supp_threshold is not None:
-            if global_pair_support < min_supp_threshold and cart_relative_support < min_supp_threshold:
-                continue
-
-        if min_conf_threshold is not None:
-            if pair_confidence < min_conf_threshold:
-                continue
-
-        if min_lift_threshold is not None:
-            if pair_lift < min_lift_threshold:
-                continue
-
         results.append({
             'product_name': name,
             'name': name,

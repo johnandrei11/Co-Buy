@@ -137,51 +137,19 @@ const ItemFrequencies = ({
     .sort((a, b) => (b.count || b.quantity || b.value || 0) - (a.count || a.quantity || a.value || 0))
     .slice(0, 10);
 
-  // 3. Associated Products parameter-bound filtering & pagination
-  const filteredAssoc = React.useMemo(() => {
-    if (!Array.isArray(coBoughtResults)) return [];
-    const minSupp = params?.min_support !== undefined && params?.min_support !== null ? parseFloat(params.min_support) : null;
-    const minConf = params?.min_confidence !== undefined && params?.min_confidence !== null ? parseFloat(params.min_confidence) : null;
-    const minLift = params?.min_lift !== undefined && params?.min_lift !== null ? parseFloat(params.min_lift) : null;
+  // 3. Associated Products pagination (displays all items bought together with selected cart products)
+  const associatedItems = Array.isArray(coBoughtResults) ? coBoughtResults : [];
 
-    return coBoughtResults.filter(item => {
-      const globSupp = item.global_support ?? item.support ?? 0;
-      const cartSupp = item.cart_support ?? item.confidence ?? (item.percentage ? item.percentage / 100 : 0);
-      const conf = item.confidence ?? (item.percentage ? item.percentage / 100 : 0);
-      const lift = item.lift ?? 1.0;
-
-      // 1. Min Support: item meets support either globally across dataset or within matching cart cohort
-      if (minSupp !== null && !isNaN(minSupp)) {
-        if (globSupp < minSupp && cartSupp < minSupp) {
-          return false;
-        }
-      }
-      // 2. Min Confidence (Likelihood given cart)
-      if (minConf !== null && !isNaN(minConf)) {
-        if (conf < minConf) {
-          return false;
-        }
-      }
-      // 3. Min Lift (Pairing Strength)
-      if (minLift !== null && !isNaN(minLift)) {
-        if (lift < minLift) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }, [coBoughtResults, params?.min_support, params?.min_confidence, params?.min_lift]);
-
-  // Reset pagination if filtered count or parameters change
+  // Reset pagination if product selection changes
   useEffect(() => {
     setAssocPage(1);
-  }, [params?.min_support, params?.min_confidence, params?.min_lift, selectedList.length]);
+  }, [selectedList.length]);
 
-  const totalAssoc = filteredAssoc.length;
+  const totalAssoc = associatedItems.length;
   const totalAssocPages = Math.max(1, Math.ceil(totalAssoc / assocPageSize));
   const safeAssocPage = Math.min(assocPage, totalAssocPages);
   const startIdx = (safeAssocPage - 1) * assocPageSize;
-  const paginatedAssoc = filteredAssoc.slice(startIdx, startIdx + assocPageSize);
+  const paginatedAssoc = associatedItems.slice(startIdx, startIdx + assocPageSize);
 
   return (
     <div className="cobuy-grid-3">
@@ -468,34 +436,18 @@ const ItemFrequencies = ({
           ) : totalAssoc === 0 ? (
             <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-dim)', fontSize: '0.8rem' }}>
               <div style={{ fontStyle: 'italic', marginBottom: '0.35rem', fontWeight: 600, color: 'var(--text-main)' }}>
-                No associated products meet the current parameter thresholds.
+                No associated products found.
               </div>
               <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                Current thresholds: <strong>Support ≥ {Math.round((params?.min_support ?? 0.05) * 100)}%</strong>, <strong>Confidence ≥ {Math.round((params?.min_confidence ?? 0.5) * 100)}%</strong>, <strong>Lift ≥ {parseFloat(params?.min_lift ?? 1.0).toFixed(1)}x</strong>.<br />
-                Lower the thresholds in <strong>Parameters</strong> above to reveal more product pairings.
+                No other items were purchased together with this selection.
               </p>
             </div>
           ) : (
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', fontSize: '0.72rem', color: 'var(--text-dim)', flexWrap: 'wrap', gap: '4px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                  <span>
-                    Showing all <strong>{totalAssoc}</strong> qualifying associated {totalAssoc === 1 ? 'product' : 'products'}
-                  </span>
-                  {params && (
-                    <span style={{
-                      fontSize: '0.68rem',
-                      fontWeight: 600,
-                      padding: '1px 6px',
-                      borderRadius: '4px',
-                      background: 'rgba(99, 102, 241, 0.08)',
-                      color: '#4f46e5',
-                      border: '1px solid rgba(99, 102, 241, 0.15)'
-                    }}>
-                      Supp ≥ {Math.round((params.min_support ?? 0.05) * 100)}% • Conf ≥ {Math.round((params.min_confidence ?? 0.5) * 100)}% • Lift ≥ {parseFloat(params.min_lift ?? 1.0).toFixed(1)}x
-                    </span>
-                  )}
-                </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                <span>
+                  Showing all <strong>{totalAssoc}</strong> associated {totalAssoc === 1 ? 'product' : 'products'}
+                </span>
                 {totalAssocPages > 1 && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                     <button
@@ -546,7 +498,6 @@ const ItemFrequencies = ({
                     const productName = item.product_name || item.name || '—';
                     const count = item.count || item.quantity || 0;
                     const category = item.category;
-                    const confVal = item.confidence ?? (item.percentage ? item.percentage / 100 : null);
                     return (
                       <tr key={productName} className={isFirst ? 'top-accent-row' : ''}>
                         <td className="col-rank">{globalIndex + 1}</td>
@@ -561,13 +512,7 @@ const ItemFrequencies = ({
                           </div>
                         </td>
                         <td className="col-metric" style={{ color: isFirst ? 'var(--primary-color)' : 'var(--text-main)', fontWeight: isFirst ? '800' : '700' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-                            <span>{count > 0 ? `${count.toLocaleString()} times` : '—'}</span>
-                            <span style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-dim)' }}>
-                              {confVal != null ? `${Math.round(confVal * 100)}% likely` : `${item.percentage}%`}
-                              {item.lift ? ` • ${item.lift}x lift` : ''}
-                            </span>
-                          </div>
+                          <div>{count > 0 ? `${count.toLocaleString()} times` : '—'}</div>
                         </td>
                       </tr>
                     );

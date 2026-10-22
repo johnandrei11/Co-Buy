@@ -415,20 +415,10 @@ const Analytics = () => {
     setLoadingCoBought(true);
     try {
       const targetId = overrideDatasetId || datasetId;
-      const activeParams = overrideParams || params;
       const queryParams = new URLSearchParams();
       products.forEach(p => queryParams.append('product', p));
       if (targetId) {
         queryParams.append('dataset_id', targetId);
-      }
-      if (activeParams?.min_support !== undefined && activeParams?.min_support !== null) {
-        queryParams.append('min_support', activeParams.min_support);
-      }
-      if (activeParams?.min_confidence !== undefined && activeParams?.min_confidence !== null) {
-        queryParams.append('min_confidence', activeParams.min_confidence);
-      }
-      if (activeParams?.min_lift !== undefined && activeParams?.min_lift !== null) {
-        queryParams.append('min_lift', activeParams.min_lift);
       }
       const response = await axios.get(`${API_BASE}/frequently_bought_together?${queryParams.toString()}`);
       if (response.data && Array.isArray(response.data.frequently_bought_together)) {
