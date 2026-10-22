@@ -41,8 +41,8 @@ export default function AdminEvaluations() {
         const res = await axios.get(`${API_BASE}/admin/evaluations/datasets`);
         const list = res.data.datasets || [];
         setDatasets(list);
-        // Automatically trigger benchmark on "all" (Overall Evaluation) by default with both algorithms
-        runBenchmarkForId('all', 5, 50, 'both');
+        // Automatically load evaluation on "all" (Overall Evaluation) by default with mined algorithm only
+        runBenchmarkForId('all', 5, 50, 'mined');
       } catch (err) {
         console.error('Failed to load evaluation datasets:', err);
       }
@@ -96,7 +96,7 @@ export default function AdminEvaluations() {
     }
   };
 
-  const runBenchmarkForId = async (datasetId, supp, conf, algoMode = 'both') => {
+  const runBenchmarkForId = async (datasetId, supp, conf, algoMode = 'mined') => {
     if (!datasetId) return;
     setRunning(true);
     setError('');
@@ -132,7 +132,7 @@ export default function AdminEvaluations() {
   };
 
   const isOverall = results?.dataset_id === 'all';
-  const hasRunOther = true;
+  const hasRunOther = Boolean(results?.has_run_other);
 
   // Metrics extraction & normalization
   const aprioriTime = results?.apriori?.execution_time_seconds ?? 0;
@@ -437,18 +437,22 @@ export default function AdminEvaluations() {
                     : '#34d399')
               }}>
                 {selectedAlgorithmView === 'both'
-                  ? 'Comparing Apriori vs FP-Growth'
+                  ? (hasRunOther ? 'Comparing Apriori vs FP-Growth' : 'Comparison Pending Benchmark')
                   : (isMinedActive
                     ? `Showing Mined (${minedAlgo})`
-                    : `Evaluating ${otherAlgo}`)}
+                    : (hasRunOther ? `Evaluating ${otherAlgo}` : `${otherAlgo} (Benchmark Pending)`))}
               </span>
             </div>
             <p style={{ margin: '2px 0 0', fontSize: '0.74rem', color: 'var(--admin-text-muted)' }}>
               {selectedAlgorithmView === 'both'
-                ? 'Displaying side-by-side performance differences and benchmarks between Apriori and FP-Growth.'
+                ? (hasRunOther
+                  ? 'Displaying side-by-side performance differences and benchmarks between Apriori and FP-Growth.'
+                  : 'Click "Run All Evaluations" or "Run Benchmark" above to compute and compare both algorithms.')
                 : isMinedActive
                   ? `Displaying the algorithm (${minedAlgo}) used for rule mining on ${results?.dataset_name || 'this dataset'}.`
-                  : `Displaying evaluation metrics for alternative algorithm (${otherAlgo}).`}
+                  : (hasRunOther
+                    ? `Displaying evaluation metrics for alternative algorithm (${otherAlgo}).`
+                    : `Alternative algorithm (${otherAlgo}) has not been benchmarked yet. Click "Run Benchmark" above.`)}
             </p>
           </div>
         </div>
@@ -604,26 +608,34 @@ export default function AdminEvaluations() {
                 <span style={{ color: 'var(--admin-text-muted)' }}>
                   {isMinedActive ? otherAlgo : minedAlgo} {isMinedActive ? '(Alternative):' : '(Mined):'}
                 </span>
-                <span style={{ fontWeight: 700, color: otherTime > 0 ? ((isMinedActive ? otherAlgo : minedAlgo) === 'FP-Growth' ? '#34d399' : '#38bdf8') : 'var(--admin-text-muted)' }}>
-                  {otherTime > 0 ? `${otherTime.toFixed(4)}s` : '0.0000s'}
+                <span style={{ fontWeight: 700, color: (isMinedActive ? (hasRunOther && otherTime > 0) : otherTime > 0) ? ((isMinedActive ? otherAlgo : minedAlgo) === 'FP-Growth' ? '#34d399' : '#38bdf8') : 'var(--admin-text-muted)' }}>
+                  {isMinedActive
+                    ? (hasRunOther ? (otherTime > 0 ? `${otherTime.toFixed(4)}s` : '0.0000s') : 'Pending benchmark')
+                    : (otherTime > 0 ? `${otherTime.toFixed(4)}s` : '0.0000s')}
                 </span>
               </div>
             </div>
           ) : (
-            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: '1rem', borderTop: '1px solid var(--admin-card-border)', paddingTop: '0.75rem' }}>
-              <div>
-                <div style={{ fontSize: '0.72rem', color: '#60a5fa', marginBottom: '2px', fontWeight: 600 }}>Apriori</div>
-                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#38bdf8' }}>
-                  {`${aprioriTime.toFixed(4)}s`}
+            !hasRunOther ? (
+              <div style={{ marginTop: '1rem', borderTop: '1px solid var(--admin-card-border)', paddingTop: '0.75rem', fontSize: '0.74rem', color: 'var(--admin-text-muted)' }}>
+                Comparison pending (Run Benchmark)
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: '1rem', borderTop: '1px solid var(--admin-card-border)', paddingTop: '0.75rem' }}>
+                <div>
+                  <div style={{ fontSize: '0.72rem', color: '#60a5fa', marginBottom: '2px', fontWeight: 600 }}>Apriori</div>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#38bdf8' }}>
+                    {`${aprioriTime.toFixed(4)}s`}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#34d399', marginBottom: '2px', fontWeight: 600 }}>FP-Growth</div>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#34d399' }}>
+                    {`${fpgrowthTime.toFixed(4)}s`}
+                  </div>
                 </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '0.72rem', color: '#34d399', marginBottom: '2px', fontWeight: 600 }}>FP-Growth</div>
-                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#34d399' }}>
-                  {`${fpgrowthTime.toFixed(4)}s`}
-                </div>
-              </div>
-            </div>
+            )
           )}
 
           {activeTooltip === 'time' && (
@@ -676,7 +688,7 @@ export default function AdminEvaluations() {
             <div style={{ marginTop: '0.85rem', borderTop: '1px solid var(--admin-card-border)', paddingTop: '0.75rem' }}>
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
                 <div style={{ fontSize: '1.45rem', fontWeight: 900, color: activeAlgo === 'FP-Growth' ? '#34d399' : '#38bdf8', letterSpacing: '-0.02em' }}>
-                  {`${activeMem.toLocaleString('en-US', { maximumFractionDigits: 2 })} KB`}
+                  {(!isMinedActive && !hasRunOther) ? '0.00 KB' : `${activeMem.toLocaleString('en-US', { maximumFractionDigits: 2 })} KB`}
                 </div>
                 <span style={{
                   fontSize: '0.68rem',
@@ -701,26 +713,34 @@ export default function AdminEvaluations() {
                 <span style={{ color: 'var(--admin-text-muted)' }}>
                   {isMinedActive ? otherAlgo : minedAlgo} {isMinedActive ? '(Alternative):' : '(Mined):'}
                 </span>
-                <span style={{ fontWeight: 700, color: otherMem > 0 ? ((isMinedActive ? otherAlgo : minedAlgo) === 'FP-Growth' ? '#34d399' : '#38bdf8') : 'var(--admin-text-muted)' }}>
-                  {otherMem > 0 ? `${otherMem.toLocaleString('en-US', { maximumFractionDigits: 2 })} KB` : '0.00 KB'}
+                <span style={{ fontWeight: 700, color: (isMinedActive ? (hasRunOther && otherMem > 0) : otherMem > 0) ? ((isMinedActive ? otherAlgo : minedAlgo) === 'FP-Growth' ? '#34d399' : '#38bdf8') : 'var(--admin-text-muted)' }}>
+                  {isMinedActive
+                    ? (hasRunOther ? (otherMem > 0 ? `${otherMem.toLocaleString('en-US', { maximumFractionDigits: 2 })} KB` : '0.00 KB') : 'Pending benchmark')
+                    : (otherMem > 0 ? `${otherMem.toLocaleString('en-US', { maximumFractionDigits: 2 })} KB` : '0.00 KB')}
                 </span>
               </div>
             </div>
           ) : (
-            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: '1rem', borderTop: '1px solid var(--admin-card-border)', paddingTop: '0.75rem' }}>
-              <div>
-                <div style={{ fontSize: '0.72rem', color: '#60a5fa', marginBottom: '2px', fontWeight: 600 }}>Apriori</div>
-                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#38bdf8' }}>
-                  {`${aprioriMem.toLocaleString('en-US', { maximumFractionDigits: 2 })} KB`}
+            !hasRunOther ? (
+              <div style={{ marginTop: '1rem', borderTop: '1px solid var(--admin-card-border)', paddingTop: '0.75rem', fontSize: '0.74rem', color: 'var(--admin-text-muted)' }}>
+                Comparison pending (Run Benchmark)
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: '1rem', borderTop: '1px solid var(--admin-card-border)', paddingTop: '0.75rem' }}>
+                <div>
+                  <div style={{ fontSize: '0.72rem', color: '#60a5fa', marginBottom: '2px', fontWeight: 600 }}>Apriori</div>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#38bdf8' }}>
+                    {`${aprioriMem.toLocaleString('en-US', { maximumFractionDigits: 2 })} KB`}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#34d399', marginBottom: '2px', fontWeight: 600 }}>FP-Growth</div>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#34d399' }}>
+                    {`${fpgrowthMem.toLocaleString('en-US', { maximumFractionDigits: 2 })} KB`}
+                  </div>
                 </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '0.72rem', color: '#34d399', marginBottom: '2px', fontWeight: 600 }}>FP-Growth</div>
-                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#34d399' }}>
-                  {`${fpgrowthMem.toLocaleString('en-US', { maximumFractionDigits: 2 })} KB`}
-                </div>
-              </div>
-            </div>
+            )
           )}
 
           {activeTooltip === 'memory' && (
@@ -773,7 +793,7 @@ export default function AdminEvaluations() {
             <div style={{ marginTop: '0.85rem', borderTop: '1px solid var(--admin-card-border)', paddingTop: '0.75rem' }}>
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
                 <div style={{ fontSize: '1.45rem', fontWeight: 900, color: activeAlgo === 'FP-Growth' ? '#34d399' : '#38bdf8', letterSpacing: '-0.02em' }}>
-                  {activeRules.toLocaleString()}
+                  {(!isMinedActive && !hasRunOther) ? '0' : activeRules.toLocaleString()}
                 </div>
                 <span style={{
                   fontSize: '0.68rem',
@@ -798,26 +818,34 @@ export default function AdminEvaluations() {
                 <span style={{ color: 'var(--admin-text-muted)' }}>
                   {isMinedActive ? otherAlgo : minedAlgo} {isMinedActive ? '(Alternative):' : '(Mined):'}
                 </span>
-                <span style={{ fontWeight: 700, color: otherRules > 0 ? ((isMinedActive ? otherAlgo : minedAlgo) === 'FP-Growth' ? '#34d399' : '#38bdf8') : 'var(--admin-text-muted)' }}>
-                  {otherRules > 0 ? `${otherRules.toLocaleString()} rules` : '0 rules'}
+                <span style={{ fontWeight: 700, color: (isMinedActive ? (hasRunOther && otherRules > 0) : otherRules > 0) ? ((isMinedActive ? otherAlgo : minedAlgo) === 'FP-Growth' ? '#34d399' : '#38bdf8') : 'var(--admin-text-muted)' }}>
+                  {isMinedActive
+                    ? (hasRunOther ? (otherRules > 0 ? `${otherRules.toLocaleString()} rules` : '0 rules') : 'Pending benchmark')
+                    : (otherRules > 0 ? `${otherRules.toLocaleString()} rules` : '0 rules')}
                 </span>
               </div>
             </div>
           ) : (
-            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: '1rem', borderTop: '1px solid var(--admin-card-border)', paddingTop: '0.75rem' }}>
-              <div>
-                <div style={{ fontSize: '0.72rem', color: '#60a5fa', marginBottom: '2px', fontWeight: 600 }}>Apriori</div>
-                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#38bdf8' }}>
-                  {aprioriRules.toLocaleString()}
+            !hasRunOther ? (
+              <div style={{ marginTop: '1rem', borderTop: '1px solid var(--admin-card-border)', paddingTop: '0.75rem', fontSize: '0.74rem', color: 'var(--admin-text-muted)' }}>
+                Comparison pending (Run Benchmark)
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: '1rem', borderTop: '1px solid var(--admin-card-border)', paddingTop: '0.75rem' }}>
+                <div>
+                  <div style={{ fontSize: '0.72rem', color: '#60a5fa', marginBottom: '2px', fontWeight: 600 }}>Apriori</div>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#38bdf8' }}>
+                    {aprioriRules.toLocaleString()}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#34d399', marginBottom: '2px', fontWeight: 600 }}>FP-Growth</div>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#34d399' }}>
+                    {fpgrowthRules.toLocaleString()}
+                  </div>
                 </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '0.72rem', color: '#34d399', marginBottom: '2px', fontWeight: 600 }}>FP-Growth</div>
-                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#34d399' }}>
-                  {fpgrowthRules.toLocaleString()}
-                </div>
-              </div>
-            </div>
+            )
           )}
 
           {activeTooltip === 'rules' && (
@@ -870,7 +898,7 @@ export default function AdminEvaluations() {
             <div style={{ marginTop: '0.85rem', borderTop: '1px solid var(--admin-card-border)', paddingTop: '0.75rem' }}>
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
                 <div style={{ fontSize: '1.45rem', fontWeight: 900, color: activeAlgo === 'FP-Growth' ? '#34d399' : '#38bdf8', letterSpacing: '-0.02em' }}>
-                  {activeItemsets.toLocaleString()}
+                  {(!isMinedActive && !hasRunOther) ? '0' : activeItemsets.toLocaleString()}
                 </div>
                 <span style={{
                   fontSize: '0.68rem',
@@ -895,26 +923,34 @@ export default function AdminEvaluations() {
                 <span style={{ color: 'var(--admin-text-muted)' }}>
                   {isMinedActive ? otherAlgo : minedAlgo} {isMinedActive ? '(Alternative):' : '(Mined):'}
                 </span>
-                <span style={{ fontWeight: 700, color: otherItemsets > 0 ? ((isMinedActive ? otherAlgo : minedAlgo) === 'FP-Growth' ? '#34d399' : '#38bdf8') : 'var(--admin-text-muted)' }}>
-                  {otherItemsets > 0 ? `${otherItemsets.toLocaleString()} itemsets` : '0 itemsets'}
+                <span style={{ fontWeight: 700, color: (isMinedActive ? (hasRunOther && otherItemsets > 0) : otherItemsets > 0) ? ((isMinedActive ? otherAlgo : minedAlgo) === 'FP-Growth' ? '#34d399' : '#38bdf8') : 'var(--admin-text-muted)' }}>
+                  {isMinedActive
+                    ? (hasRunOther ? (otherItemsets > 0 ? `${otherItemsets.toLocaleString()} itemsets` : '0 itemsets') : 'Pending benchmark')
+                    : (otherItemsets > 0 ? `${otherItemsets.toLocaleString()} itemsets` : '0 itemsets')}
                 </span>
               </div>
             </div>
           ) : (
-            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: '1rem', borderTop: '1px solid var(--admin-card-border)', paddingTop: '0.75rem' }}>
-              <div>
-                <div style={{ fontSize: '0.72rem', color: '#60a5fa', marginBottom: '2px', fontWeight: 600 }}>Apriori</div>
-                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#38bdf8' }}>
-                  {aprioriItemsets.toLocaleString()}
+            !hasRunOther ? (
+              <div style={{ marginTop: '1rem', borderTop: '1px solid var(--admin-card-border)', paddingTop: '0.75rem', fontSize: '0.74rem', color: 'var(--admin-text-muted)' }}>
+                Comparison pending (Run Benchmark)
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: '1rem', borderTop: '1px solid var(--admin-card-border)', paddingTop: '0.75rem' }}>
+                <div>
+                  <div style={{ fontSize: '0.72rem', color: '#60a5fa', marginBottom: '2px', fontWeight: 600 }}>Apriori</div>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#38bdf8' }}>
+                    {aprioriItemsets.toLocaleString()}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#34d399', marginBottom: '2px', fontWeight: 600 }}>FP-Growth</div>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#34d399' }}>
+                    {fpgrowthItemsets.toLocaleString()}
+                  </div>
                 </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '0.72rem', color: '#34d399', marginBottom: '2px', fontWeight: 600 }}>FP-Growth</div>
-                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#34d399' }}>
-                  {fpgrowthItemsets.toLocaleString()}
-                </div>
-              </div>
-            </div>
+            )
           )}
 
           {activeTooltip === 'itemsets' && (
@@ -993,166 +1029,207 @@ export default function AdminEvaluations() {
 
           </div>
 
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-            gap: '1.25rem',
-            marginTop: '1.25rem'
-          }}>
-            {/* Detailed metric metrics */}
+          {!isMinedActive && !hasRunOther ? (
             <div style={{
+              marginTop: '1.25rem',
+              padding: '2.5rem 1.5rem',
+              textAlign: 'center',
               background: 'var(--admin-input)',
               borderRadius: '10px',
-              padding: '1.25rem',
-              border: `1px solid ${activeAlgo === 'FP-Growth' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.2)'}`
+              border: '1px dashed var(--admin-card-border)'
             }}>
-              <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--admin-text-primary)', marginBottom: '1rem' }}>
-                Resource & Execution Comparison
-              </div>
-
-              {/* Execution Time Bars */}
-              <div style={{ marginBottom: '1.15rem' }}>
-                <div style={{ fontSize: '0.74rem', color: 'var(--admin-text-muted)', marginBottom: '6px', fontWeight: 600 }}>
-                  Execution Runtime (Lower is better)
-                </div>
-                {/* Active algorithm bar */}
-                <div style={{ marginBottom: '6px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--admin-text-secondary)', marginBottom: '3px' }}>
-                    <span>{activeAlgo} (Active)</span>
-                    <span style={{ fontWeight: 700, color: activeAlgo === 'FP-Growth' ? '#34d399' : '#38bdf8' }}>{activeTime.toFixed(4)}s</span>
-                  </div>
-                  <div style={{ width: '100%', height: '18px', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '5px', overflow: 'hidden' }}>
-                    <div style={{
-                      width: `${activeTimePct}%`,
-                      height: '100%',
-                      background: activeAlgo === 'FP-Growth' ? 'linear-gradient(90deg, #059669 0%, #10b981 100%)' : 'linear-gradient(90deg, #2563eb 0%, #3b82f6 100%)',
-                      borderRadius: '5px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'flex-end',
-                      paddingRight: '6px',
-                      color: '#ffffff',
-                      fontSize: '0.7rem',
-                      fontWeight: 700
-                    }}>
-                      {activeTimePct > 20 && `${activeTime.toFixed(4)}s`}
-                    </div>
-                  </div>
-                </div>
-                {/* Previous / Alternative algorithm bar */}
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--admin-text-muted)', marginBottom: '3px' }}>
-                    <span>{isMinedActive ? otherAlgo : minedAlgo} ({isMinedActive ? 'Alternative' : 'Mined'})</span>
-                    <span style={{ fontWeight: 700 }}>{otherTime > 0 ? `${otherTime.toFixed(4)}s` : '0.0000s'}</span>
-                  </div>
-                  <div style={{ width: '100%', height: '18px', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '5px', overflow: 'hidden' }}>
-                    <div style={{
-                      width: `${otherTimePct}%`,
-                      height: '100%',
-                      background: (isMinedActive ? otherAlgo : minedAlgo) === 'FP-Growth' ? 'linear-gradient(90deg, #059669 0%, #10b981 100%)' : 'linear-gradient(90deg, #2563eb 0%, #3b82f6 100%)',
-                      borderRadius: '5px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'flex-end',
-                      paddingRight: '6px',
-                      color: '#ffffff',
-                      fontSize: '0.7rem',
-                      fontWeight: 700,
-                      opacity: 0.8
-                    }}>
-                      {otherTimePct > 20 && `${otherTime.toFixed(4)}s`}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Peak Memory Bars */}
-              <div>
-                <div style={{ fontSize: '0.74rem', color: 'var(--admin-text-muted)', marginBottom: '6px', fontWeight: 600 }}>
-                  Peak Memory (Lower is better)
-                </div>
-                {/* Active algorithm bar */}
-                <div style={{ marginBottom: '6px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--admin-text-secondary)', marginBottom: '3px' }}>
-                    <span>{activeAlgo} (Active)</span>
-                    <span style={{ fontWeight: 700, color: activeAlgo === 'FP-Growth' ? '#34d399' : '#818cf8' }}>{activeMem.toLocaleString('en-US', { maximumFractionDigits: 2 })} KB</span>
-                  </div>
-                  <div style={{ width: '100%', height: '18px', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '5px', overflow: 'hidden' }}>
-                    <div style={{
-                      width: `${activeMemPct}%`,
-                      height: '100%',
-                      background: activeAlgo === 'FP-Growth' ? 'linear-gradient(90deg, #047857 0%, #059669 100%)' : 'linear-gradient(90deg, #1d4ed8 0%, #2563eb 100%)',
-                      borderRadius: '5px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'flex-end',
-                      paddingRight: '6px',
-                      color: '#ffffff',
-                      fontSize: '0.7rem',
-                      fontWeight: 700
-                    }}>
-                      {activeMemPct > 20 && `${activeMem.toLocaleString('en-US', { maximumFractionDigits: 0 })} KB`}
-                    </div>
-                  </div>
-                </div>
-                {/* Previous / Alternative algorithm bar */}
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--admin-text-muted)', marginBottom: '3px' }}>
-                    <span>{isMinedActive ? otherAlgo : minedAlgo} ({isMinedActive ? 'Alternative' : 'Mined'})</span>
-                    <span style={{ fontWeight: 700 }}>{otherMem > 0 ? `${otherMem.toLocaleString('en-US', { maximumFractionDigits: 2 })} KB` : '0.00 KB'}</span>
-                  </div>
-                  <div style={{ width: '100%', height: '18px', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '5px', overflow: 'hidden' }}>
-                    <div style={{
-                      width: `${otherMemPct}%`,
-                      height: '100%',
-                      background: (isMinedActive ? otherAlgo : minedAlgo) === 'FP-Growth' ? 'linear-gradient(90deg, #047857 0%, #059669 100%)' : 'linear-gradient(90deg, #1d4ed8 0%, #2563eb 100%)',
-                      borderRadius: '5px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'flex-end',
-                      paddingRight: '6px',
-                      color: '#ffffff',
-                      fontSize: '0.7rem',
-                      fontWeight: 700,
-                      opacity: 0.8
-                    }}>
-                      {otherMemPct > 20 && `${otherMem.toLocaleString('en-US', { maximumFractionDigits: 0 })} KB`}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Algorithm Characteristics Callout */}
-            <div style={{
-              background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.8) 100%)',
-              borderRadius: '10px',
-              padding: '1.25rem',
-              border: '1px solid rgba(59, 130, 246, 0.25)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.65rem' }}>
-                <Sparkles size={16} color="#60a5fa" />
-                <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--admin-text-primary)' }}>
-                  {isMinedActive
-                    ? 'Data Mining Execution Details'
-                    : 'Alternative Evaluation Overview'}
-                </span>
-              </div>
-              <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: 0, lineHeight: 1.6 }}>
-                {activeAlgo === 'Apriori'
-                  ? 'Apriori uses level-wise candidate generation and iterative database scans. It is well suited for datasets with small transaction counts and moderate item vocabulary where candidate state generation remains minimal.'
-                  : 'FP-Growth compresses frequent items into an in-memory prefix tree without candidate item generation. It excels on denser and larger catalogs by traversing conditional pattern bases directly.'}
+              <Zap size={36} style={{ color: otherAlgo === 'FP-Growth' ? '#34d399' : '#60a5fa', marginBottom: '0.75rem', opacity: 0.8 }} />
+              <h4 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--admin-text-primary)', margin: '0 0 0.5rem' }}>
+                {otherAlgo} Benchmark Pending
+              </h4>
+              <p style={{ fontSize: '0.82rem', color: 'var(--admin-text-muted)', maxWidth: '520px', margin: '0 auto 1.25rem' }}>
+                The original data mining execution used <strong>{minedAlgo}</strong>. To benchmark <strong>{otherAlgo}</strong> and view execution runtime and memory usage, click the button below.
               </p>
-              <div style={{ marginTop: '0.85rem', fontSize: '0.73rem', color: 'var(--admin-text-muted)' }}>
-                {isMinedActive
-                  ? `Recorded as the data mining algorithm for ${results?.dataset_name || 'this dataset'}.`
-                  : `Alternative candidate evaluation for ${results?.dataset_name || 'this dataset'}.`}
+              <button
+                type="button"
+                onClick={handleRunBenchmark}
+                disabled={running}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '0.55rem 1.25rem',
+                  background: otherAlgo === 'FP-Growth' ? '#059669' : '#2563eb',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  cursor: running ? 'not-allowed' : 'pointer',
+                  boxShadow: '0 2px 8px rgba(37, 99, 235, 0.25)'
+                }}
+              >
+                <Play size={15} fill="#ffffff" />
+                <span>{isOverall ? 'Run All Evaluations' : 'Run Benchmark'}</span>
+              </button>
+            </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+              gap: '1.25rem',
+              marginTop: '1.25rem'
+            }}>
+              {/* Detailed metric metrics */}
+              <div style={{
+                background: 'var(--admin-input)',
+                borderRadius: '10px',
+                padding: '1.25rem',
+                border: `1px solid ${activeAlgo === 'FP-Growth' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.2)'}`
+              }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--admin-text-primary)', marginBottom: '1rem' }}>
+                  Resource & Execution Comparison
+                </div>
+
+                {/* Execution Time Bars */}
+                <div style={{ marginBottom: '1.15rem' }}>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--admin-text-muted)', marginBottom: '6px', fontWeight: 600 }}>
+                    Execution Runtime (Lower is better)
+                  </div>
+                  {/* Active algorithm bar */}
+                  <div style={{ marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--admin-text-secondary)', marginBottom: '3px' }}>
+                      <span>{activeAlgo} (Active)</span>
+                      <span style={{ fontWeight: 700, color: activeAlgo === 'FP-Growth' ? '#34d399' : '#38bdf8' }}>{activeTime.toFixed(4)}s</span>
+                    </div>
+                    <div style={{ width: '100%', height: '18px', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '5px', overflow: 'hidden' }}>
+                      <div style={{
+                        width: `${activeTimePct}%`,
+                        height: '100%',
+                        background: activeAlgo === 'FP-Growth' ? 'linear-gradient(90deg, #059669 0%, #10b981 100%)' : 'linear-gradient(90deg, #2563eb 0%, #3b82f6 100%)',
+                        borderRadius: '5px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'flex-end',
+                        paddingRight: '6px',
+                        color: '#ffffff',
+                        fontSize: '0.7rem',
+                        fontWeight: 700
+                      }}>
+                        {activeTimePct > 20 && `${activeTime.toFixed(4)}s`}
+                      </div>
+                    </div>
+                  </div>
+                  {/* Previous / Alternative algorithm bar */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--admin-text-muted)', marginBottom: '3px' }}>
+                      <span>{isMinedActive ? otherAlgo : minedAlgo} ({isMinedActive ? 'Alternative' : 'Mined'})</span>
+                      <span style={{ fontWeight: 700 }}>{otherTime > 0 ? `${otherTime.toFixed(4)}s` : '0.0000s'}</span>
+                    </div>
+                    <div style={{ width: '100%', height: '18px', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '5px', overflow: 'hidden' }}>
+                      <div style={{
+                        width: `${otherTimePct}%`,
+                        height: '100%',
+                        background: (isMinedActive ? otherAlgo : minedAlgo) === 'FP-Growth' ? 'linear-gradient(90deg, #059669 0%, #10b981 100%)' : 'linear-gradient(90deg, #2563eb 0%, #3b82f6 100%)',
+                        borderRadius: '5px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'flex-end',
+                        paddingRight: '6px',
+                        color: '#ffffff',
+                        fontSize: '0.7rem',
+                        fontWeight: 700,
+                        opacity: 0.8
+                      }}>
+                        {otherTimePct > 20 && `${otherTime.toFixed(4)}s`}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Peak Memory Bars */}
+                <div>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--admin-text-muted)', marginBottom: '6px', fontWeight: 600 }}>
+                    Peak Memory (Lower is better)
+                  </div>
+                  {/* Active algorithm bar */}
+                  <div style={{ marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--admin-text-secondary)', marginBottom: '3px' }}>
+                      <span>{activeAlgo} (Active)</span>
+                      <span style={{ fontWeight: 700, color: activeAlgo === 'FP-Growth' ? '#34d399' : '#818cf8' }}>{activeMem.toLocaleString('en-US', { maximumFractionDigits: 2 })} KB</span>
+                    </div>
+                    <div style={{ width: '100%', height: '18px', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '5px', overflow: 'hidden' }}>
+                      <div style={{
+                        width: `${activeMemPct}%`,
+                        height: '100%',
+                        background: activeAlgo === 'FP-Growth' ? 'linear-gradient(90deg, #047857 0%, #059669 100%)' : 'linear-gradient(90deg, #1d4ed8 0%, #2563eb 100%)',
+                        borderRadius: '5px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'flex-end',
+                        paddingRight: '6px',
+                        color: '#ffffff',
+                        fontSize: '0.7rem',
+                        fontWeight: 700
+                      }}>
+                        {activeMemPct > 20 && `${activeMem.toLocaleString('en-US', { maximumFractionDigits: 0 })} KB`}
+                      </div>
+                    </div>
+                  </div>
+                  {/* Previous / Alternative algorithm bar */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--admin-text-muted)', marginBottom: '3px' }}>
+                      <span>{isMinedActive ? otherAlgo : minedAlgo} ({isMinedActive ? 'Alternative' : 'Mined'})</span>
+                      <span style={{ fontWeight: 700 }}>{otherMem > 0 ? `${otherMem.toLocaleString('en-US', { maximumFractionDigits: 2 })} KB` : '0.00 KB'}</span>
+                    </div>
+                    <div style={{ width: '100%', height: '18px', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '5px', overflow: 'hidden' }}>
+                      <div style={{
+                        width: `${otherMemPct}%`,
+                        height: '100%',
+                        background: (isMinedActive ? otherAlgo : minedAlgo) === 'FP-Growth' ? 'linear-gradient(90deg, #047857 0%, #059669 100%)' : 'linear-gradient(90deg, #1d4ed8 0%, #2563eb 100%)',
+                        borderRadius: '5px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'flex-end',
+                        paddingRight: '6px',
+                        color: '#ffffff',
+                        fontSize: '0.7rem',
+                        fontWeight: 700,
+                        opacity: 0.8
+                      }}>
+                        {otherMemPct > 20 && `${otherMem.toLocaleString('en-US', { maximumFractionDigits: 0 })} KB`}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Algorithm Characteristics Callout */}
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.8) 100%)',
+                borderRadius: '10px',
+                padding: '1.25rem',
+                border: '1px solid rgba(59, 130, 246, 0.25)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.65rem' }}>
+                  <Sparkles size={16} color="#60a5fa" />
+                  <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--admin-text-primary)' }}>
+                    {isMinedActive
+                      ? 'Data Mining Execution Details'
+                      : 'Alternative Evaluation Overview'}
+                  </span>
+                </div>
+                <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: 0, lineHeight: 1.6 }}>
+                  {activeAlgo === 'Apriori'
+                    ? 'Apriori uses level-wise candidate generation and iterative database scans. It is well suited for datasets with small transaction counts and moderate item vocabulary where candidate state generation remains minimal.'
+                    : 'FP-Growth compresses frequent items into an in-memory prefix tree without candidate item generation. It excels on denser and larger catalogs by traversing conditional pattern bases directly.'}
+                </p>
+                <div style={{ marginTop: '0.85rem', fontSize: '0.73rem', color: 'var(--admin-text-muted)' }}>
+                  {isMinedActive
+                    ? `Recorded as the data mining algorithm for ${results?.dataset_name || 'this dataset'}.`
+                    : `Alternative candidate evaluation for ${results?.dataset_name || 'this dataset'}.`}
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       ) : (
         <div style={{
@@ -1242,12 +1319,51 @@ export default function AdminEvaluations() {
             </div>
           </div>
 
-          {/* 3-Column Comparison Grid */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-            gap: '1.25rem'
-          }}>
+          {/* 3-Column Comparison Grid or Pending Banner */}
+          {!hasRunOther ? (
+            <div style={{
+              padding: '2.5rem 1.5rem',
+              textAlign: 'center',
+              background: 'var(--admin-input)',
+              borderRadius: '10px',
+              border: '1px dashed var(--admin-card-border)'
+            }}>
+              <Scale size={36} style={{ color: '#a855f7', marginBottom: '0.75rem', opacity: 0.8 }} />
+              <h4 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--admin-text-primary)', margin: '0 0 0.5rem' }}>
+                Side-by-Side Comparison Pending
+              </h4>
+              <p style={{ fontSize: '0.82rem', color: 'var(--admin-text-muted)', maxWidth: '520px', margin: '0 auto 1.25rem' }}>
+                Comparison requires benchmarking both algorithms under identical thresholds. Click below to benchmark both algorithms and view execution speedup, memory savings, and rule agreement.
+              </p>
+              <button
+                type="button"
+                onClick={handleRunBenchmark}
+                disabled={running}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '0.55rem 1.25rem',
+                  background: '#7c3aed',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  cursor: running ? 'not-allowed' : 'pointer',
+                  boxShadow: '0 2px 8px rgba(124, 58, 237, 0.3)'
+                }}
+              >
+                <Play size={15} fill="#ffffff" />
+                <span>{isOverall ? 'Run All Evaluations' : 'Run Benchmark'}</span>
+              </button>
+            </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+              gap: '1.25rem'
+            }}>
             {/* Column 1: Apriori Panel (Blue) */}
             <div style={{
               background: 'var(--admin-input)',
@@ -1531,8 +1647,9 @@ export default function AdminEvaluations() {
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
+    )}
 
       {/* 4. Cross-Dataset Breakdown Table (Only shown in Overall Evaluation mode) */}
       {isOverall && results?.dataset_breakdown && (

@@ -3458,8 +3458,8 @@ def admin_evaluations_benchmark():
 
     min_support = float(data.get('min_support', 0.05))
     min_confidence = float(data.get('min_confidence', 0.50))
-    algorithm_mode = str(data.get('algorithm_mode', 'both')).strip().lower()
-    has_run_other = True
+    algorithm_mode = str(data.get('algorithm_mode', 'mined')).strip().lower()
+    has_run_other = (algorithm_mode == 'both')
 
     if str(dataset_id).lower() == 'all':
         conn = db.get_db_connection()
@@ -3538,9 +3538,13 @@ def admin_evaluations_benchmark():
             else:
                 apriori_selected_count += 1
 
-            # Always run both algorithms for complete evaluation and comparison
-            run_ap = True
-            run_fp = True
+            # Only run both algorithms when benchmark is explicitly requested with algorithm_mode == 'both'
+            if has_run_other:
+                run_ap = True
+                run_fp = True
+            else:
+                run_ap = (ds_algo == 'Apriori')
+                run_fp = (ds_algo == 'FP-Growth')
 
             # Apriori
             if run_ap:
@@ -3674,16 +3678,16 @@ def admin_evaluations_benchmark():
                 'ap_pct': round((apriori_selected_count / n) * 100, 1)
             },
             'apriori': {
-                'execution_time_seconds': avg_ap_time,
-                'peak_memory_kb': avg_ap_mem,
-                'frequent_itemsets': total_ap_itemsets,
-                'rules_generated': total_ap_rules
+                'execution_time_seconds': avg_ap_time if (has_run_other or overall_mined == 'Apriori') else 0.0,
+                'peak_memory_kb': avg_ap_mem if (has_run_other or overall_mined == 'Apriori') else 0.0,
+                'frequent_itemsets': total_ap_itemsets if (has_run_other or overall_mined == 'Apriori') else 0,
+                'rules_generated': total_ap_rules if (has_run_other or overall_mined == 'Apriori') else 0
             },
             'fpgrowth': {
-                'execution_time_seconds': avg_fp_time,
-                'peak_memory_kb': avg_fp_mem,
-                'frequent_itemsets': total_fp_itemsets,
-                'rules_generated': total_fp_rules
+                'execution_time_seconds': avg_fp_time if (has_run_other or overall_mined == 'FP-Growth') else 0.0,
+                'peak_memory_kb': avg_fp_mem if (has_run_other or overall_mined == 'FP-Growth') else 0.0,
+                'frequent_itemsets': total_fp_itemsets if (has_run_other or overall_mined == 'FP-Growth') else 0,
+                'rules_generated': total_fp_rules if (has_run_other or overall_mined == 'FP-Growth') else 0
             },
             'comparison': {
                 'speedup_factor': speedup if has_run_other else 1.0,
@@ -3750,9 +3754,13 @@ def admin_evaluations_benchmark():
 
     other_algorithm = 'FP-Growth' if selected_algorithm == 'Apriori' else 'Apriori'
 
-    # Always benchmark both algorithms for complete evaluation and comparison
-    run_apriori = True
-    run_fpgrowth = True
+    # Only benchmark both algorithms when explicitly requested (algorithm_mode == 'both')
+    if has_run_other:
+        run_apriori = True
+        run_fpgrowth = True
+    else:
+        run_apriori = (selected_algorithm == 'Apriori')
+        run_fpgrowth = (selected_algorithm == 'FP-Growth')
 
     # 1. Benchmark Apriori
     if run_apriori:
