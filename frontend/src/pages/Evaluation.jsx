@@ -167,7 +167,7 @@ const Evaluation = () => {
           const marketType = log.details?.market_type || matchingDs?.market_type || 'General Store';
           const txCount = log.details?.transaction_count || matchingDs?.transaction_count || 0;
           const uniqueItems = log.details?.unique_items || matchingDs?.unique_items || 0;
-          const algUsed = log.details?.algorithm || log.details?.algorithm_used || matchingDs?.algorithm || (txCount < 30 && txCount > 0 ? 'Apriori' : 'FP-Growth');
+          const algUsed = log.details?.algorithm || log.details?.algorithm_used || matchingDs?.algorithm || (txCount < 500 && txCount > 0 ? 'Apriori' : 'FP-Growth');
           mergedList.push({
             id: log.id,
             dataset_id: dsId,
@@ -196,7 +196,7 @@ const Evaluation = () => {
           const ownerName = ds.user_name || (ownerEmail === 'admin@store.com' ? 'Store Administrator' : ownerEmail);
           const marketType = ds.market_type || 'General Store';
           const txCount = ds.transaction_count || 0;
-          const algUsed = ds.algorithm || (txCount < 30 && txCount > 0 ? 'Apriori' : 'FP-Growth');
+          const algUsed = ds.algorithm || (txCount < 500 && txCount > 0 ? 'Apriori' : 'FP-Growth');
           mergedList.push({
             id: `ds-${ds.id}`,
             dataset_id: ds.id,
