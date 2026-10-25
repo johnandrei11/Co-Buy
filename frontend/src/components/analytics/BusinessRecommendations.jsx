@@ -62,7 +62,8 @@ const DATE_RANGES = [
 ];
 
 const BusinessRecommendations = ({
-  datasetId
+  datasetId,
+  params
 }) => {
   const toolbarRef = useRef(null);
   const dateDropdownRef = useRef(null);
@@ -111,7 +112,10 @@ const BusinessRecommendations = ({
           search: searchQuery || '',
           sort_by: sortBy,
           page: 1,
-          page_size: 1000
+          page_size: 1000,
+          min_support: params?.min_support,
+          min_confidence: params?.min_confidence,
+          min_lift: params?.min_lift
         }
       });
 
@@ -337,7 +341,10 @@ const BusinessRecommendations = ({
           search: searchQuery,
           sort_by: sortBy,
           page: currentPage,
-          page_size: pageSize
+          page_size: pageSize,
+          min_support: params?.min_support,
+          min_confidence: params?.min_confidence,
+          min_lift: params?.min_lift
         }
       });
       setDataPayload(res.data);
@@ -347,7 +354,7 @@ const BusinessRecommendations = ({
     } finally {
       setLoading(false);
     }
-  }, [datasetId, activeCategory, dateRange, searchQuery, sortBy, currentPage, pageSize]);
+  }, [datasetId, activeCategory, dateRange, searchQuery, sortBy, currentPage, pageSize, params?.min_support, params?.min_confidence, params?.min_lift]);
 
   useEffect(() => {
     fetchRecommendations();

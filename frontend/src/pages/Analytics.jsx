@@ -12,7 +12,10 @@ import {
   Layers,
   ChevronDown,
   ChevronUp,
-  Download
+  Download,
+  Info,
+  Database,
+  Search
 } from 'lucide-react';
 
 import AnalyticsSetupState from '../components/analytics/AnalyticsSetupState';
@@ -124,6 +127,13 @@ const Analytics = () => {
   const [coBoughtResults, setCoBoughtResults] = useState([]);
   const [loadingCoBought, setLoadingCoBought] = useState(false);
   const [recommendationSearchTerm, setRecommendationSearchTerm] = useState('');
+  const [activeSubTab, setActiveSubTab] = useState(() => {
+    return sessionStorage.getItem('analytics_subtab') || 'recommendations';
+  });
+
+  useEffect(() => {
+    sessionStorage.setItem('analytics_subtab', activeSubTab);
+  }, [activeSubTab]);
 
   // Dynamically derived unique categories from the uploaded dataset
   const categoryOptions = React.useMemo(() => {
@@ -424,6 +434,12 @@ const Analytics = () => {
       if (activeParams?.min_support !== undefined && activeParams?.min_support !== null) {
         queryParams.append('min_support', activeParams.min_support);
       }
+      if (activeParams?.min_confidence !== undefined && activeParams?.min_confidence !== null) {
+        queryParams.append('min_confidence', activeParams.min_confidence);
+      }
+      if (activeParams?.min_lift !== undefined && activeParams?.min_lift !== null) {
+        queryParams.append('min_lift', activeParams.min_lift);
+      }
       const response = await axios.get(`${API_BASE}/frequently_bought_together?${queryParams.toString()}`);
       if (response.data && Array.isArray(response.data.frequently_bought_together)) {
         setCoBoughtResults(response.data.frequently_bought_together);
@@ -474,6 +490,16 @@ const Analytics = () => {
       fetchCoBoughtTogether(selectedCartProducts, datasetId, params);
     }
   }, [datasetId]);
+
+  useEffect(() => {
+    if (selectedCartProducts.length === 0 && Array.isArray(stats?.top_items) && stats.top_items.length > 0) {
+      const topP = stats.top_items[0].name;
+      if (topP) {
+        setSelectedCartProducts([topP]);
+        fetchCoBoughtTogether([topP], datasetId, params);
+      }
+    }
+  }, [stats?.top_items]);
 
   useEffect(() => {
     const s = searchParams.get('search');
@@ -635,6 +661,12 @@ const Analytics = () => {
       sessionStorage.setItem('analytics_results', JSON.stringify(minedData));
       if (selectedCartProducts.length > 0) {
         fetchCoBoughtTogether(selectedCartProducts, targetDatasetId, activeParams);
+      } else if (Array.isArray(stats?.top_items) && stats.top_items.length > 0) {
+        const topP = stats.top_items[0].name;
+        if (topP) {
+          setSelectedCartProducts([topP]);
+          fetchCoBoughtTogether([topP], targetDatasetId, activeParams);
+        }
       }
       if (targetDatasetId) {
         localStorage.setItem('activeDatasetId', String(targetDatasetId));
@@ -1047,6 +1079,7 @@ const Analytics = () => {
       {/* ── 3. Bottom Section: Business Recommendations Advisory Engine ── */}
       <BusinessRecommendations
         datasetId={datasetId}
+        params={params}
       />
 
       {/* ── 4. Mining Parameters Modal ── */}

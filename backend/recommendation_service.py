@@ -493,7 +493,7 @@ class RecommendationEngine:
         period_b = self.raw_transactions[mid:]
         return period_a, period_b
 
-    def generate_recommendations(self, category_filter: str = 'ALL', date_range: str = 'all', search: str = '', max_per_category: int = MAX_RECOMMENDATIONS_PER_CATEGORY) -> dict:
+    def generate_recommendations(self, category_filter: str = 'ALL', date_range: str = 'all', search: str = '', max_per_category: int = MAX_RECOMMENDATIONS_PER_CATEGORY, min_support: float = None, min_confidence: float = None, min_lift: float = None) -> dict:
         """
         Full 7-tier pipeline execution returning normalized payload.
         """
@@ -535,24 +535,28 @@ class RecommendationEngine:
         te_ary = te.fit(self.raw_transactions).transform(self.raw_transactions)
         df = pd.DataFrame(te_ary, columns=te.columns_)
 
-        # Adaptive support & confidence
-        min_supp = 0.01 if total_tx > 50 else 0.05
-        min_conf = 0.15 if total_tx > 50 else 0.20
+        # Adaptive support & confidence or user-defined parameters
+        has_custom_params = (min_support is not None or min_confidence is not None or min_lift is not None)
+        min_supp = float(min_support) if min_support is not None else (0.01 if total_tx > 50 else 0.05)
+        min_conf = float(min_confidence) if min_confidence is not None else (0.15 if total_tx > 50 else 0.20)
+        min_lft = float(min_lift) if min_lift is not None else 1.0
 
         try:
             frequent_itemsets = fpgrowth(df, min_support=min_supp, use_colnames=True)
             if frequent_itemsets.empty:
-                frequent_itemsets = apriori(df, min_support=max(min_supp / 2, 0.005), use_colnames=True)
+                frequent_itemsets = apriori(df, min_support=min_supp if has_custom_params else max(min_supp / 2, 0.005), use_colnames=True)
             
             if not frequent_itemsets.empty:
                 rules_df = association_rules(pd.DataFrame(frequent_itemsets), metric="confidence", min_threshold=min_conf)
+                if not rules_df.empty and min_lft > 0:
+                    rules_df = rules_df[rules_df['lift'] >= min_lft]
             else:
                 rules_df = pd.DataFrame()
         except Exception:
             rules_df = pd.DataFrame()
 
-        # Fallback pair extraction if sparse
-        if rules_df.empty:
+        # Fallback pair extraction only when using default / unparameterized mode and sparse
+        if rules_df.empty and not has_custom_params:
             rules_df = self._synthesize_pair_rules()
 
         # Layer 3: Signal Interpretation & Trend Velocity

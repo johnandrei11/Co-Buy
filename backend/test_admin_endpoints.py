@@ -235,5 +235,43 @@ class AdminEndpointsTestCase(unittest.TestCase):
         self.assertEqual(export_res.mimetype, 'text/csv')
         self.assertIn('ID,Timestamp,Business', export_res.get_data(as_text=True))
 
+    def test_admin_evaluations_benchmark_modes(self):
+        """Evaluation benchmark must honor mined mode (null alternative) and both mode."""
+        # 1. Overall evaluation with algorithm_mode='mined'
+        res_mined = self.client.post('/api/admin/evaluations/benchmark',
+                                     json={'dataset_id': 'all', 'algorithm_mode': 'mined'},
+                                     headers=self.admin_headers)
+        self.assertEqual(res_mined.status_code, 200)
+        data_mined = res_mined.get_json()
+        self.assertFalse(data_mined['has_run_other'])
+
+        breakdown = data_mined.get('dataset_breakdown', [])
+        self.assertGreater(len(breakdown), 0)
+        for row in breakdown:
+            if row['selected_algorithm'] == 'Apriori':
+                self.assertIsNotNone(row['apriori_time'])
+                self.assertIsNone(row['fpgrowth_time'])
+                self.assertIsNone(row['fpgrowth_mem_kb'])
+            elif row['selected_algorithm'] == 'FP-Growth':
+                self.assertIsNotNone(row['fpgrowth_time'])
+                self.assertIsNone(row['apriori_time'])
+                self.assertIsNone(row['apriori_mem_kb'])
+
+        # 2. Overall evaluation with algorithm_mode='both' (after clicking Run All Evaluations)
+        res_both = self.client.post('/api/admin/evaluations/benchmark',
+                                    json={'dataset_id': 'all', 'algorithm_mode': 'both'},
+                                    headers=self.admin_headers)
+        self.assertEqual(res_both.status_code, 200)
+        data_both = res_both.get_json()
+        self.assertTrue(data_both['has_run_other'])
+
+        breakdown_both = data_both.get('dataset_breakdown', [])
+        for row in breakdown_both:
+            self.assertIsNotNone(row['apriori_time'])
+            self.assertIsNotNone(row['fpgrowth_time'])
+            self.assertIsNotNone(row['apriori_mem_kb'])
+            self.assertIsNotNone(row['fpgrowth_mem_kb'])
+
 if __name__ == '__main__':
     unittest.main()
+

@@ -1582,6 +1582,9 @@ def get_recommendations_v2():
         page = int(body.get('page') or request.args.get('page', 1))
         page_size = int(body.get('page_size') or request.args.get('page_size', 10))
         max_per_category = int(body.get('max_per_category') or request.args.get('max_per_category', 12))
+        min_supp_val = body.get('min_support') or request.args.get('min_support')
+        min_conf_val = body.get('min_confidence') or request.args.get('min_confidence')
+        min_lift_val = body.get('min_lift') or request.args.get('min_lift')
     else:
         dataset_id = request.args.get('dataset_id')
         category = request.args.get('category', 'ALL')
@@ -1591,6 +1594,13 @@ def get_recommendations_v2():
         page = int(request.args.get('page', 1))
         page_size = int(request.args.get('page_size', 10))
         max_per_category = int(request.args.get('max_per_category', 12))
+        min_supp_val = request.args.get('min_support')
+        min_conf_val = request.args.get('min_confidence')
+        min_lift_val = request.args.get('min_lift')
+
+    min_support = float(min_supp_val) if min_supp_val is not None and str(min_supp_val).strip() != '' else None
+    min_confidence = float(min_conf_val) if min_conf_val is not None and str(min_conf_val).strip() != '' else None
+    min_lift = float(min_lift_val) if min_lift_val is not None and str(min_lift_val).strip() != '' else None
 
     if not dataset_id:
         user_datasets = db.get_datasets(user_email=user_email)
@@ -1616,14 +1626,22 @@ def get_recommendations_v2():
         return auth_err[0] if auth_err else jsonify({'error': 'Forbidden'}), auth_err[1] if auth_err else 403
 
     force_refresh = request.args.get('refresh') == 'true' or request.args.get('nocache') == '1' or (request.is_json and request.json and (request.json.get('refresh') is True or request.json.get('nocache') is True))
-    cache_key = (str(dataset_id), str(user_email), str(category).upper(), str(date_range), str(search).strip().lower(), max_per_category)
+    cache_key = (str(dataset_id), str(user_email), str(category).upper(), str(date_range), str(search).strip().lower(), max_per_category, min_support, min_confidence, min_lift)
     cached = CACHE_RECOMMENDATIONS_V2.get(cache_key)
     if not force_refresh and cached and (time.time() - cached['time'] < 300):
         full_res = cached['data']
     else:
         try:
             engine = RecommendationEngine(user_email=user_email, dataset_id=int(dataset_id))
-            full_res = engine.generate_recommendations(category_filter=category, date_range=date_range, search=search, max_per_category=max_per_category)
+            full_res = engine.generate_recommendations(
+                category_filter=category,
+                date_range=date_range,
+                search=search,
+                max_per_category=max_per_category,
+                min_support=min_support,
+                min_confidence=min_confidence,
+                min_lift=min_lift
+            )
             CACHE_RECOMMENDATIONS_V2[cache_key] = {'time': time.time(), 'data': full_res}
         except Exception as e:
             logger.exception(f"Error computing v2 recommendations for dataset {dataset_id}: {e}")
@@ -1945,8 +1963,12 @@ def get_frequently_bought_together():
         item_base_support = (item_total_counts.get(name_lower, 0) / total_tx) if total_tx > 0 else 0.0
         pair_lift = (pair_confidence / item_base_support) if item_base_support > 0 else 1.0
 
-        # Parameter binding filters: relative co-occurrence support within matching baskets
+        # Parameter binding filters: relative co-occurrence support, confidence, and lift
         if min_supp_threshold is not None and cart_relative_support < min_supp_threshold:
+            continue
+        if min_conf_threshold is not None and pair_confidence < min_conf_threshold:
+            continue
+        if min_lift_threshold is not None and pair_lift < min_lift_threshold:
             continue
 
         results.append({
@@ -3458,8 +3480,8 @@ def admin_evaluations_benchmark():
 
     min_support = float(data.get('min_support', 0.05))
     min_confidence = float(data.get('min_confidence', 0.50))
-    algorithm_mode = str(data.get('algorithm_mode', 'both')).strip().lower()
-    has_run_other = True
+    algorithm_mode = str(data.get('algorithm_mode', 'mined')).strip().lower()
+    has_run_other = algorithm_mode in ('both', 'all', 'other', 'alternative')
 
     if str(dataset_id).lower() == 'all':
         conn = db.get_db_connection()
@@ -3538,9 +3560,13 @@ def admin_evaluations_benchmark():
             else:
                 apriori_selected_count += 1
 
-            # Always run both algorithms for complete evaluation and comparison
-            run_ap = True
-            run_fp = True
+            # Only run both algorithms when benchmark is requested (has_run_other)
+            if has_run_other:
+                run_ap = True
+                run_fp = True
+            else:
+                run_ap = (ds_algo == 'Apriori')
+                run_fp = (ds_algo == 'FP-Growth')
 
             # Apriori
             if run_ap:
@@ -3560,8 +3586,8 @@ def admin_evaluations_benchmark():
                     ap_rules = pd.DataFrame()
                 ap_mem_kb = round(ap_peak / 1024, 2)
             else:
-                ap_time = 0.0
-                ap_mem_kb = 0.0
+                ap_time = None
+                ap_mem_kb = None
                 ap_items = pd.DataFrame()
                 ap_rules = pd.DataFrame()
 
@@ -3583,18 +3609,18 @@ def admin_evaluations_benchmark():
                     fp_rules = pd.DataFrame()
                 fp_mem_kb = round(fp_peak / 1024, 2)
             else:
-                fp_time = 0.0
-                fp_mem_kb = 0.0
+                fp_time = None
+                fp_mem_kb = None
                 fp_items = pd.DataFrame()
                 fp_rules = pd.DataFrame()
 
-            if run_ap:
+            if run_ap and ap_time is not None:
                 apriori_times.append(ap_time)
                 apriori_mems.append(ap_mem_kb)
                 total_ap_rules += len(ap_rules)
                 total_ap_itemsets += len(ap_items)
 
-            if run_fp:
+            if run_fp and fp_time is not None:
                 fpgrowth_times.append(fp_time)
                 fpgrowth_mems.append(fp_mem_kb)
                 total_fp_rules += len(fp_rules)
@@ -3607,12 +3633,12 @@ def admin_evaluations_benchmark():
                 'transactions': ds['transaction_count'] or len(txs),
                 'unique_items': ds['unique_items'] or len(te.columns_),
                 'selected_algorithm': ds_algo,
-                'faster_algorithm': ('FP-Growth' if fp_time <= ap_time else 'Apriori') if (run_ap and run_fp) else ds_algo,
-                'memory_winner': ('FP-Growth' if fp_mem_kb <= ap_mem_kb else 'Apriori') if (run_ap and run_fp) else ds_algo,
-                'apriori_time': ap_time if run_ap else None,
-                'fpgrowth_time': fp_time if run_fp else None,
-                'apriori_mem_kb': ap_mem_kb if run_ap else None,
-                'fpgrowth_mem_kb': fp_mem_kb if run_fp else None,
+                'faster_algorithm': ('FP-Growth' if (fp_time is not None and ap_time is not None and fp_time <= ap_time) else 'Apriori') if (run_ap and run_fp) else ds_algo,
+                'memory_winner': ('FP-Growth' if (fp_mem_kb is not None and ap_mem_kb is not None and fp_mem_kb <= ap_mem_kb) else 'Apriori') if (run_ap and run_fp) else ds_algo,
+                'apriori_time': ap_time,
+                'fpgrowth_time': fp_time,
+                'apriori_mem_kb': ap_mem_kb,
+                'fpgrowth_mem_kb': fp_mem_kb,
                 'rules_generated': len(fp_rules if run_fp else ap_rules),
                 'frequent_itemsets': len(fp_items if run_fp else ap_items)
             })
@@ -3627,10 +3653,10 @@ def admin_evaluations_benchmark():
         avg_fp_time = round(sum(fpgrowth_times) / max(len(fpgrowth_times), 1), 4) if fpgrowth_times else 0.0
         avg_ap_mem = round(sum(apriori_mems) / max(len(apriori_mems), 1), 2) if apriori_mems else 0.0
         avg_fp_mem = round(sum(fpgrowth_mems) / max(len(fpgrowth_mems), 1), 2) if fpgrowth_mems else 0.0
-        speedup = round(avg_ap_time / avg_fp_time, 2) if avg_fp_time > 0 and avg_ap_time > 0 else 1.0
+        speedup = round(avg_ap_time / avg_fp_time, 2) if (has_run_other and avg_fp_time > 0 and avg_ap_time > 0) else 1.0
 
         selected_pct = round((max(fpgrowth_selected_count, apriori_selected_count) / n) * 100, 1)
-        mem_savings_pct = round(((avg_ap_mem - avg_fp_mem) / max(avg_ap_mem, 1)) * 100, 1) if avg_ap_mem > avg_fp_mem else 0
+        mem_savings_pct = round(((avg_ap_mem - avg_fp_mem) / max(avg_ap_mem, 1)) * 100, 1) if (has_run_other and avg_ap_mem > avg_fp_mem) else 0
 
         if has_run_other:
             if overall_mined == 'FP-Growth':
@@ -3674,16 +3700,16 @@ def admin_evaluations_benchmark():
                 'ap_pct': round((apriori_selected_count / n) * 100, 1)
             },
             'apriori': {
-                'execution_time_seconds': avg_ap_time,
-                'peak_memory_kb': avg_ap_mem,
-                'frequent_itemsets': total_ap_itemsets,
-                'rules_generated': total_ap_rules
+                'execution_time_seconds': avg_ap_time if (has_run_other or overall_mined == 'Apriori') else None,
+                'peak_memory_kb': avg_ap_mem if (has_run_other or overall_mined == 'Apriori') else None,
+                'frequent_itemsets': total_ap_itemsets if (has_run_other or overall_mined == 'Apriori') else None,
+                'rules_generated': total_ap_rules if (has_run_other or overall_mined == 'Apriori') else None
             },
             'fpgrowth': {
-                'execution_time_seconds': avg_fp_time,
-                'peak_memory_kb': avg_fp_mem,
-                'frequent_itemsets': total_fp_itemsets,
-                'rules_generated': total_fp_rules
+                'execution_time_seconds': avg_fp_time if (has_run_other or overall_mined == 'FP-Growth') else None,
+                'peak_memory_kb': avg_fp_mem if (has_run_other or overall_mined == 'FP-Growth') else None,
+                'frequent_itemsets': total_fp_itemsets if (has_run_other or overall_mined == 'FP-Growth') else None,
+                'rules_generated': total_fp_rules if (has_run_other or overall_mined == 'FP-Growth') else None
             },
             'comparison': {
                 'speedup_factor': speedup if has_run_other else 1.0,
@@ -3750,9 +3776,9 @@ def admin_evaluations_benchmark():
 
     other_algorithm = 'FP-Growth' if selected_algorithm == 'Apriori' else 'Apriori'
 
-    # Always benchmark both algorithms for complete evaluation and comparison
-    run_apriori = True
-    run_fpgrowth = True
+    # Only benchmark the alternative algorithm if benchmark mode was explicitly requested
+    run_apriori = True if has_run_other else (selected_algorithm == 'Apriori')
+    run_fpgrowth = True if has_run_other else (selected_algorithm == 'FP-Growth')
 
     # 1. Benchmark Apriori
     if run_apriori:
@@ -3774,10 +3800,10 @@ def admin_evaluations_benchmark():
             apriori_itemsets_count = 0
             apriori_rules_count = 0
     else:
-        apriori_time = 0.0
-        apriori_mem_kb = 0.0
-        apriori_itemsets_count = 0
-        apriori_rules_count = 0
+        apriori_time = None
+        apriori_mem_kb = None
+        apriori_itemsets_count = None
+        apriori_rules_count = None
 
     # 2. Benchmark FP-Growth
     if run_fpgrowth:
@@ -3799,12 +3825,12 @@ def admin_evaluations_benchmark():
             fpgrowth_itemsets_count = 0
             fpgrowth_rules_count = 0
     else:
-        fpgrowth_time = 0.0
-        fpgrowth_mem_kb = 0.0
-        fpgrowth_itemsets_count = 0
-        fpgrowth_rules_count = 0
+        fpgrowth_time = None
+        fpgrowth_mem_kb = None
+        fpgrowth_itemsets_count = None
+        fpgrowth_rules_count = None
 
-    speedup = round(apriori_time / fpgrowth_time, 2) if fpgrowth_time > 0 and apriori_time > 0 else 1.0
+    speedup = round(apriori_time / fpgrowth_time, 2) if (has_run_other and fpgrowth_time and apriori_time and fpgrowth_time > 0 and apriori_time > 0) else 1.0
 
     ds_name = ds_row['name']
     if has_run_other:
@@ -3855,9 +3881,9 @@ def admin_evaluations_benchmark():
         },
         'comparison': {
             'speedup_factor': speedup if has_run_other else 1.0,
-            'faster_algorithm': ('FP-Growth' if fpgrowth_time <= apriori_time else 'Apriori') if has_run_other else selected_algorithm,
-            'memory_efficiency_winner': ('FP-Growth' if fpgrowth_mem_kb <= apriori_mem_kb else 'Apriori') if has_run_other else selected_algorithm,
-            'rules_agreement': (apriori_rules_count == fpgrowth_rules_count) if has_run_other else True
+            'faster_algorithm': ('FP-Growth' if (fpgrowth_time is not None and apriori_time is not None and fpgrowth_time <= apriori_time) else 'Apriori') if has_run_other else selected_algorithm,
+            'memory_efficiency_winner': ('FP-Growth' if (fpgrowth_mem_kb is not None and apriori_mem_kb is not None and fpgrowth_mem_kb <= apriori_mem_kb) else 'Apriori') if has_run_other else selected_algorithm,
+            'rules_agreement': (apriori_rules_count == fpgrowth_rules_count) if (has_run_other and apriori_rules_count is not None and fpgrowth_rules_count is not None) else True
         }
     })
 
